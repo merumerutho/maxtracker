@@ -9,8 +9,8 @@ endif
 include $(DEVKITARM)/ds_rules
 
 BUILD		:=	build
-SOURCES		:=	source/core
-INCLUDES	:=	source/core ../include
+SOURCES		:=	source/core source/ui
+INCLUDES	:=	source/core source/ui ../include
 DATA		:=
 
 ARCH	:=	-mthumb -mthumb-interwork
