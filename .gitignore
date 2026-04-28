@@ -1,0 +1,6 @@
+reference/
+*.elf
+*.nds
+*.map
+build/
+release/
