@@ -20,6 +20,7 @@
 #include "draw_util.h"
 #include "editor_state.h"   /* EditorCursor (cursor.instrument) */
 #include "song.h"
+#include "playback.h"       /* playback_rebuild_mas for live edits */
 #include "scroll_view.h"
 #include <stdio.h>
 #include <string.h>
@@ -205,6 +206,14 @@ static void param_set(MT_Instrument *ins, ParamField p, int v)
     default:
         break;
     }
+
+    /* If the song is playing right now, rebuild the MAS buffer so the
+     * audio engine picks up the change immediately. The rebuild is
+     * heavyweight (stops + restarts playback under the hood), so it's
+     * gated on actual playback to avoid wasted work when stopped — the
+     * next playback_play() will rebuild from scratch anyway. */
+    if (playback_is_playing())
+        playback_rebuild_mas();
 
     mt_mark_song_modified();
 }
@@ -853,6 +862,8 @@ void instrument_view_input(u32 down, u32 held)
         ins->has_full_notemap = false;
         ins->sample = 0;
         memset(ins->name, 0, sizeof(ins->name));
+        if (playback_is_playing())
+            playback_rebuild_mas();
         mt_mark_song_modified();
         return;
     }

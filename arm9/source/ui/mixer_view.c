@@ -10,9 +10,6 @@
  * mute state, and a wide horizontal bar for visual reference.
  *
  * Volume range is 0-64 matching maxmod's MAS channel volume cap.
- *
- * Initial version: mute toggle is local-only (no playback_set_mute).
- * Wired to the playback engine when that subsystem lands.
  */
 
 #include "mixer_view.h"
@@ -21,6 +18,7 @@
 #include "font.h"
 #include "editor_state.h"
 #include "song.h"
+#include "playback.h"
 #include "scroll_view.h"
 #include <stdio.h>
 #include <string.h>
@@ -131,6 +129,20 @@ static void draw_top(u8 *fb)
 
 /* ------------------------------------------------------------------ */
 /* Bottom screen: vertical scrollable channel list                     */
+/*                                                                     */
+/* One channel per grid row. Layout (proportional to FONT_COLS):       */
+/*                                                                     */
+/*   Row 0:        Header                                              */
+/*   Rows 2..N-1:  Channel rows (scrollable; selected row highlighted) */
+/*   Row 30-31:    Footer (scaled)                                     */
+/*                                                                     */
+/* Per-row layout:                                                     */
+/*   col 1..4:   "CH##"                                                */
+/*   col 7..E:   pixel fader bar  (E = FONT_COLS - 9)                  */
+/*   col E+2..E+4: "%3d" volume                                        */
+/*   col E+6:    pan char (L/C/R)                                      */
+/*   col E+7:    'M' if muted                                          */
+/*   col FONT_COLS-1: scrollbar reserved                               */
 /* ------------------------------------------------------------------ */
 
 static void draw_bot(u8 *fb)
@@ -263,7 +275,8 @@ void mixer_view_input(u32 down, u32 held)
      *   UP/DOWN without A: select channel (navigation, wraps)
      *   A held + UP/DOWN: volume ±1 (small step)
      *   A held + LEFT/RIGHT: volume ±4 (large step)
-     * Volume clamped to 0-64. */
+     * Volume clamped to 0-64. Vertical list, so navigation matches the
+     * scrolldirection. */
     if (!(held & KEY_A)) {
         u32 rep = keysDownRepeat();
         if (rep & KEY_UP) {
@@ -290,11 +303,12 @@ void mixer_view_input(u32 down, u32 held)
         }
     }
 
-    /* X: toggle mute (local state only — wired to playback later) */
+    /* X: toggle mute */
     if (down & KEY_X) {
         int ch = mixer_state.selected_channel;
         if (ch < MT_MAX_CHANNELS) {
             mixer_state.muted[ch] = !mixer_state.muted[ch];
+            playback_set_mute(ch, mixer_state.muted[ch]);
         }
     }
 }

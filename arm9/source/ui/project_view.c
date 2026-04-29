@@ -10,13 +10,10 @@
  *   Rows 2+:    Parameter rows (label left, value right)
  *   Row 30:     Help text
  *   Row 31:     Transport bar
- *
- * Initial version: Save/Save-As stubbed (needs mas_write), debug
- * overlay stubbed (needs debug_view), song name is read-only (needs
- * text_input for editing). All other settings fully functional.
  */
 
 #include "project_view.h"
+#include "playback.h"
 #include "memtrack.h"
 #include "screen.h"
 #include "font.h"
@@ -24,6 +21,9 @@
 #include "editor_state.h"
 #include "pattern_view.h"
 #include "filebrowser.h"
+#include "mas_write.h"
+#include "debug_view.h"
+#include "text_input.h"
 #include "scroll_view.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,11 +36,22 @@ extern int         status_timer;
 extern bool        song_modified;
 extern bool        autosave_dirty;
 extern ScreenMode  disk_return_screen;
+static const char *pv_save_path = "./data/song.mas";
 
 /* ------------------------------------------------------------------ */
 /* Row definitions                                                     */
 /* ------------------------------------------------------------------ */
 
+/* X-list — single source of truth for project rows.
+ *
+ * Columns: PROW(name, label, kind)
+ *   kind ∈ { PK_EDIT, PK_RO, PK_SEP, PK_ACT, PK_ACT_CONFIRM }
+ *
+ * Order here is the on-screen order; the enum, label table, and
+ * kind table are all generated below. Every attribute query
+ * (is_separator / is_readonly / is_action / needs_confirm) becomes
+ * a kind lookup rather than a hand-maintained whitelist.
+ */
 typedef enum {
     PK_EDIT = 0,        /* editable value */
     PK_RO,              /* read-only counter */
@@ -58,7 +69,6 @@ typedef enum {
     X(REPEAT_POS,       "Repeat Position",   PK_EDIT)        \
     X(FOLLOW_MODE,      "Follow Mode",       PK_EDIT)        \
     X(FONT_SIZE,        "Font Size",         PK_EDIT)        \
-    X(FONT_FACE,        "Font",              PK_EDIT)        \
     X(DEBUG_OVERLAY,    "Debug Overlay",     PK_EDIT)        \
     X(KEY_REPEAT_DELAY, "Key Repeat Delay",  PK_EDIT)        \
     X(KEY_REPEAT_RATE,  "Key Repeat Rate",   PK_EDIT)        \
@@ -107,11 +117,15 @@ static struct {
     u8   name_edit_pos;     /* cursor position within name string      */
 } pv_state;
 
+/* Viewport for the param list. Height is recomputed each frame from
+ * font_scale_row so it shrinks correctly in BIG mode (where the 32-row
+ * SMALL grid maps to 24 rows). margin=2 keeps two rows of context
+ * visible above/below the cursor as it moves. */
 static ScrollView pv_sv = {
-    .row_y       = 3,
-    .row_height  = 0,
-    .total       = 0,
-    .cursor      = 0,
+    .row_y       = 3,     /* DATA_ROW_START */
+    .row_height  = 0,     /* filled per frame */
+    .total       = 0,     /* filled per frame (PROW_COUNT) */
+    .cursor      = 0,     /* filled per frame */
     .scroll      = 0,
     .margin      = 2,
 };
@@ -134,9 +148,52 @@ static bool is_action(ProjRow r)
     return k == PK_ACT || k == PK_ACT_CONFIRM;
 }
 
+/* Actions that discard / overwrite work require an A=yes / B=no confirm. */
 static bool needs_confirm(ProjRow r)
 {
     return row_kind(r) == PK_ACT_CONFIRM;
+}
+
+static void pv_do_save(void)
+{
+    int err = mas_write(pv_save_path, &song);
+    if (err == 0) {
+        snprintf(status_msg, sizeof(status_msg), "Saved OK");
+        song_modified = false;
+        autosave_dirty = false;
+    } else {
+        snprintf(status_msg, sizeof(status_msg), "Save error: %d", err);
+    }
+    status_timer = 180;
+}
+
+static void pv_do_save_as(void)
+{
+    char sa_path[128];
+    int sa_num = 1;
+    for (; sa_num <= 99; sa_num++) {
+        snprintf(sa_path, sizeof(sa_path),
+                 "./data/song_%02d.mas", sa_num);
+        FILE *f = fopen(sa_path, "r");
+        if (!f) break;
+        fclose(f);
+    }
+    if (sa_num <= 99) {
+        int err = mas_write(sa_path, &song);
+        if (err == 0) {
+            snprintf(status_msg, sizeof(status_msg),
+                     "Saved: song_%02d.mas", sa_num);
+            song_modified = false;
+            autosave_dirty = false;
+        } else {
+            snprintf(status_msg, sizeof(status_msg),
+                     "Save error: %d", err);
+        }
+    } else {
+        snprintf(status_msg, sizeof(status_msg),
+                 "Save-As: no free slot (01-99)");
+    }
+    status_timer = 180;
 }
 
 static void pv_open_load_browser(void)
@@ -149,26 +206,31 @@ static void pv_open_load_browser(void)
     font_clear(bot_fb, PAL_BG);
 }
 
+/* Find the next channel value index for the current channel_count */
 static int chan_index(u8 val)
 {
     for (int i = 0; i < CHAN_VALUE_COUNT; i++) {
         if (chan_values[i] == val) return i;
     }
-    return 0;
+    return 0; /* default to first if not found */
 }
 
+/* Move cursor, skipping separators */
 static void move_cursor(int dir)
 {
     int r = (int)pv_state.cursor_row + dir;
+    /* Skip separators */
     while (r >= 0 && r < PROW_COUNT && is_separator((ProjRow)r))
         r += dir;
     if (r < 0) r = 0;
     if (r >= PROW_COUNT) r = PROW_COUNT - 1;
+    /* If we landed on a separator (edge case), stay put */
     if (is_separator((ProjRow)r)) return;
     pv_state.cursor_row = (u8)r;
     pv_state.confirm_pending = false;
 }
 
+/* Count allocated (non-NULL) patterns */
 static int count_used_patterns(void)
 {
     int count = 0;
@@ -178,6 +240,7 @@ static int count_used_patterns(void)
     return count;
 }
 
+/* Compact patterns: remove patterns not referenced in the order list. */
 static void compact_patterns(void)
 {
     bool used[MT_MAX_PATTERNS];
@@ -204,12 +267,17 @@ static void compact_patterns(void)
     }
     song.patt_count = max_pat;
 
+    playback_refresh_shared_tables();
+
     snprintf(status_msg, sizeof(status_msg),
              "Freed %d pattern(s)", freed);
     status_timer = 120;
     if (freed > 0) mt_mark_song_modified();
 }
 
+/* Compact instruments: remove instruments/samples not used by any
+ * pattern cell. Scans all allocated patterns for instrument references,
+ * then clears unreferenced instrument and sample slots. */
 static void compact_instruments(void)
 {
     bool inst_used[MT_MAX_INSTRUMENTS];
@@ -323,18 +391,9 @@ static void adjust_value(ProjRow row, int delta)
                       ? FONT_MODE_SMALL : FONT_MODE_BIG);
         pattern_view_invalidate_bottom();
         break;
-    case PROW_FONT_FACE: {
-        FontMode fm = font_get_mode();
-        int cur = font_get_face(fm);
-        int count = font_face_count(fm);
-        cur += delta;
-        if (cur < 0) cur = count - 1;
-        if (cur >= count) cur = 0;
-        font_set_face(fm, cur);
-        break;
-    }
     case PROW_DEBUG_OVERLAY:
-        break;  /* debug_view not wired yet */
+        dbg_toggle();
+        break;
     case PROW_KEY_REPEAT_DELAY: {
         int v = (int)ui_repeat_delay + delta;
         if (v < 4)  v = 4;
@@ -352,6 +411,7 @@ static void adjust_value(ProjRow row, int delta)
         break;
     }
     case PROW_NAME: {
+        /* LEFT/RIGHT moves cursor within name */
         int pos = (int)pv_state.name_edit_pos + delta;
         int len = (int)strlen(song.name);
         if (pos < 0) pos = 0;
@@ -388,6 +448,8 @@ static void draw_top(u8 *fb)
     font_fill_row(fb, 2, 0, FONT_COLS, PAL_BG);
     font_puts(fb, 0, 2, SEP_STR, PAL_DIM);
 
+    /* Parameter rows — the scroll_view clips to a fixed viewport so
+     * BIG mode (24 rows total) doesn't spill into the footer. */
     int help_row_end = font_scale_row(30);
     pv_sv.row_height = help_row_end - DATA_ROW_START;
     pv_sv.total      = PROW_COUNT;
@@ -452,17 +514,18 @@ static void draw_top(u8 *fb)
                      font_get_mode() == FONT_MODE_BIG ? "BIG" : "SMALL");
             val_color = PAL_NOTE;
             break;
-        case PROW_FONT_FACE:
-            snprintf(vbuf, sizeof(vbuf), "%s",
-                     font_face_name(font_get_mode(),
-                                    font_get_face(font_get_mode())));
-            val_color = PAL_NOTE;
-            break;
         case PROW_DEBUG_OVERLAY:
-            snprintf(vbuf, sizeof(vbuf), "N/A");
-            val_color = PAL_DIM;
+            if (font_get_mode() == FONT_MODE_BIG) {
+                snprintf(vbuf, sizeof(vbuf), "N/A (BIG)");
+                val_color = PAL_DIM;
+            } else {
+                snprintf(vbuf, sizeof(vbuf), "%s",
+                         dbg_is_visible() ? "On" : "Off");
+                val_color = dbg_is_visible() ? PAL_PLAY : PAL_RED;
+            }
             break;
         case PROW_KEY_REPEAT_DELAY:
+            /* Show frames + ms approximation (60 Hz tick). */
             snprintf(vbuf, sizeof(vbuf), "%2d fr (%dms)",
                      ui_repeat_delay, (int)ui_repeat_delay * 1000 / 60);
             break;
@@ -493,8 +556,6 @@ static void draw_top(u8 *fb)
             break;
         case PROW_SAVE:
         case PROW_SAVE_AS:
-            if (pv_state.confirm_pending && (int)pv_state.cursor_row == i)
-                snprintf(vbuf, sizeof(vbuf), "[not available yet]");
             break;
         default:
             break;
@@ -505,12 +566,15 @@ static void draw_top(u8 *fb)
                       vbuf, val_color);
     }
 
+    /* Clear any viewport rows the content didn't fill (short lists, or
+     * when scrolled such that fewer rows than row_height are visible). */
     int help_row = help_row_end;
     int tport_row = font_scale_row(31);
     int drawn = last - first;
     for (int r = DATA_ROW_START + drawn; r < help_row; r++)
         font_fill_row(fb, r, 0, FONT_COLS, PAL_BG);
 
+    /* Scrollbar on the rightmost grid column across the viewport. */
     scroll_view_draw_scrollbar(&pv_sv, fb, FONT_COLS - 1);
 
     font_fill_row(fb, help_row, 0, FONT_COLS, PAL_BG);
@@ -584,8 +648,8 @@ static void draw_bottom(u8 *fb)
     font_printf(fb, 1, 14, PAL_TEXT, "  Song struct: %lu KB",
                 (unsigned long)(mem.song_struct / 1024));
 
-    /* Visual memory bar */
-    int bar_max = FONT_COLS - 4;
+    /* Visual memory bar — width adapts to current grid. */
+    int bar_max = FONT_COLS - 4;   /* room for "[" and "]" at edges */
     font_fill_row(fb, 16, 0, FONT_COLS, PAL_BG);
     font_puts(fb, 1, 16, "[", PAL_DIM);
     int bar_len = (int)(pct * bar_max / 100);
@@ -613,42 +677,60 @@ static void draw_bottom(u8 *fb)
 
 void project_view_draw(u8 *top_fb, u8 *bot_fb)
 {
+    if (text_input_draw_and_consume(top_fb, bot_fb))
+        return;   /* keyboard active or just closed (one-shot clear) */
     draw_top(top_fb);
     draw_bottom(bot_fb);
 }
 
 void project_view_input(u32 down, u32 held)
 {
+    if (text_input_is_active()) {
+        text_input_input(down, held);
+        return;
+    }
+
+    /* --- Song Name row: A opens the on-screen keyboard.
+     * Must run before the A-held edit branch below, which would
+     * otherwise just nudge the (now-obsolete) name_edit_pos cursor. */
+    if ((down & KEY_A) &&
+        (ProjRow)pv_state.cursor_row == PROW_NAME) {
+        text_input_open(song.name, sizeof(song.name) - 1,
+                        "Rename Song");
+        return;
+    }
+
     /* --- Navigation --- */
     if (!(held & KEY_A)) {
+        /* No A held: d-pad = cursor movement, repeat-aware so holding
+         * the key scrolls the list after ui_repeat_delay frames. */
         u32 rep = keysDownRepeat();
         if (rep & KEY_UP)   move_cursor(-1);
         if (rep & KEY_DOWN) move_cursor(1);
     }
 
-    /* --- B: cancel confirmation --- */
+    /* --- B: cancel confirmation (no longer navigates) --- */
     if (down & KEY_B) {
         if (pv_state.confirm_pending) {
             pv_state.confirm_pending = false;
         }
+        /* (B no longer exits — use SELECT+DOWN/LEFT to return to song) */
         return;
     }
 
     ProjRow row = (ProjRow)pv_state.cursor_row;
 
-    /* --- A pressed on action rows: trigger / confirm --- */
+    /* --- A pressed/held on action rows: trigger / confirm --- */
     if ((down & KEY_A) && is_action(row)) {
         if (needs_confirm(row)) {
             if (pv_state.confirm_pending) {
                 if (row == PROW_NEW_SONG) {
+                    if (playback_is_playing()) {
+                        playback_stop();
+                        cursor.playing = false;
+                    }
                     song_free();
                     song_init();
-                    cursor.order_pos = 0;
-                    cursor.row = 0;
-                    song_modified = false;
-                    autosave_dirty = false;
-                    snprintf(status_msg, sizeof(status_msg), "New song");
-                    status_timer = 120;
                 } else if (row == PROW_COMPACT_PAT) {
                     compact_patterns();
                 } else if (row == PROW_COMPACT_INST) {
@@ -661,27 +743,25 @@ void project_view_input(u32 down, u32 held)
                 pv_state.confirm_pending = true;
             }
         } else {
-            if (row == PROW_SAVE || row == PROW_SAVE_AS) {
-                snprintf(status_msg, sizeof(status_msg),
-                         "Save not available yet");
-                status_timer = 120;
-            }
+            if (row == PROW_SAVE)         pv_do_save();
+            else if (row == PROW_SAVE_AS) pv_do_save_as();
         }
         return;
     }
 
-    /* --- A held + directions: edit values --- */
+    /* --- A held + directions: edit values ---
+     * Use keysDownRepeat so holding A+RIGHT ramps the value. */
     if (held & KEY_A) {
         if (is_readonly(row) || is_separator(row) || is_action(row))
             return;
-        if (row == PROW_NAME)
-            return;  /* name editing needs text_input */
 
         u32 rep = keysDownRepeat();
 
+        /* LEFT/RIGHT: adjust by 1 (or toggle for bool, cycle for channels) */
         if (rep & KEY_LEFT)  adjust_value(row, -1);
         if (rep & KEY_RIGHT) adjust_value(row, 1);
 
+        /* UP/DOWN while A held: large step for numeric fields */
         if (rep & KEY_UP) {
             switch (row) {
             case PROW_TEMPO:            adjust_value(row, 10);  break;
@@ -706,4 +786,5 @@ void project_view_input(u32 down, u32 held)
         }
         return;
     }
+
 }
