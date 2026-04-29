@@ -7,24 +7,29 @@
  *   Rows 2-29:  Pattern data (28 visible rows)
  *   Row 30:     Footer (edit state)
  *   Row 31:     Transport bar
- *
- * Initial version: rendering + basic cursor navigation only.
- * Playback transport, clipboard, undo, and effect descriptions
- * are added in subsequent commits as those subsystems land.
  */
 
 #include "pattern_view.h"
 #include "screen.h"
 #include "font.h"
 #include "song.h"
+#include "playback.h"
 #include "memtrack.h"
+#include "effects.h"
 #include "navigation.h"
+#include "clipboard.h"
+#include "undo.h"
+#include "mixer_view.h"
 #include <stdio.h>
 #include <string.h>
 
 /* Shared globals defined in main.c */
 extern char status_msg[64];
 extern int  status_timer;
+
+/* Transport helpers defined in main.c — called from START handling below. */
+void stop_playback_all(void);
+void start_pattern_loop(void);
 
 /* The global cursor lives in editor_state.c. */
 
@@ -150,7 +155,7 @@ static void draw_overview_row(u8 *fb, int screen_row, int pat_row,
     if (pat && pat_row < pat->nrows)
         row_data = &pat->cells[pat_row * pat->ncols];
 
-    u32 mute_mask = 0;  /* no playback subsystem yet */
+    u32 mute_mask = playback_get_mute_mask();
 
     for (int ci = 0; ci < ch_count && ci < 8; ci++) {
         int ch = ch_start + ci;
@@ -244,7 +249,7 @@ static void draw_inside_row(u8 *fb, int screen_row, int pat_row,
 
     if (!cell) return;
 
-    bool ch_muted = false;  /* no playback subsystem yet */
+    bool ch_muted = (playback_get_mute_mask() >> ch) & 1;
 
     /* Note (cols 4-7) */
     char note_str[4];
@@ -387,7 +392,7 @@ void pattern_view_draw(u8 *fb)
     font_puts(fb, 0, 1, "RW", PAL_GRAY);
     font_putc(fb, 3, 1, '|', PAL_DIM);
 
-    u32 mute_mask = 0;  /* no playback subsystem yet */
+    u32 mute_mask = playback_get_mute_mask();
 
     if (cursor.inside) {
         bool ch_muted = (mute_mask >> cursor.channel) & 1;
@@ -500,11 +505,12 @@ void pattern_view_invalidate_bottom(void)
 
 void pattern_view_draw_bottom(u8 *fb)
 {
-    u32 mute_mask = 0;  /* no playback subsystem yet */
+    u32 mute_mask = playback_get_mute_mask();
 
     /* Effect hint: if cursor is on the fx or param column and the cell
-     * carries an effect, surface "FX XX" on the otherwise-idle play_row.
-     * Full effect name/description added when effects.h lands. */
+     * carries an effect, surface "<letter> <name>" on the otherwise-idle
+     * play_row. We re-read the cell via editor_get_current_pattern so
+     * out-of-bounds cursors during pattern swaps stay safe. */
     u8 hint_fx = 0;
     if (cursor.inside && (cursor.column == 3 || cursor.column == 4)) {
         int nrows_h;
@@ -582,19 +588,73 @@ void pattern_view_draw_bottom(u8 *fb)
 
     int ram_row   = font_scale_row(28);
     int play_row  = ram_row - 1;   /* sit directly above the RAM line */
+    int hint_row1 = play_row - 1;  /* FX description line 1             */
     int hint_row0 = play_row - 2;  /* FX header (letter + name)          */
     int bar_row  = font_scale_row(29);
     int foot_row = font_scale_row(30);
     int tport_row = font_scale_row(31);
 
-    /* Clear FX hint and play-row area */
+    /* Three-row FX hint block when not playing:
+     *   hint_row0: "<letter> <name>"                 (header, colored)
+     *   hint_row1: description line 1                (word-wrapped)
+     *   play_row:  description line 2                (wrap continuation)
+     * When playing, hint rows stay clear and play_row shows "Playing..."
+     * as before. All three are cleared unconditionally so stale text
+     * never survives a cursor move, a font-mode flip, or a play toggle. */
     font_fill_row(fb, hint_row0, 0, FONT_COLS, PAL_BG);
-    font_fill_row(fb, play_row - 1, 0, FONT_COLS, PAL_BG);
+    font_fill_row(fb, hint_row1, 0, FONT_COLS, PAL_BG);
     font_fill_row(fb, play_row,  0, FONT_COLS, PAL_BG);
     if (!cursor.playing && hint_fx != 0) {
-        char hintbuf[16];
-        snprintf(hintbuf, sizeof(hintbuf), "FX %02X", hint_fx);
-        font_puts(fb, 0, hint_row0, hintbuf, PAL_EFFECT);
+        const MT_EffectInfo *ei = effect_info(hint_fx);
+        if (ei) {
+            int cols = FONT_COLS;
+
+            char head[40];
+            snprintf(head, sizeof(head), "%c %s", ei->letter, ei->name);
+            font_puts(fb, 0, hint_row0, head, PAL_EFFECT);
+
+            const char *desc = ei->description ? ei->description : "";
+
+            /* Wrap `desc` into line1 (<= cols) and line2 (<= cols), breaking
+             * at the last space at or before the column limit. Anything
+             * past the second line is truncated — descriptions longer than
+             * 2 * cols chars should be tightened in effects.def instead. */
+            char line1[96];
+            char line2[96];
+            line1[0] = line2[0] = '\0';
+
+            int dlen = (int)strlen(desc);
+            if (dlen <= cols) {
+                int cap = (dlen < (int)sizeof(line1)) ? dlen : (int)sizeof(line1) - 1;
+                memcpy(line1, desc, cap);
+                line1[cap] = '\0';
+            } else {
+                int brk = cols;
+                for (int i = cols; i > 0; i--) {
+                    if (desc[i] == ' ') { brk = i; break; }
+                }
+                int cap1 = (brk < (int)sizeof(line1)) ? brk : (int)sizeof(line1) - 1;
+                memcpy(line1, desc, cap1);
+                line1[cap1] = '\0';
+
+                const char *rest = desc + brk;
+                while (*rest == ' ') rest++;
+
+                int rlen = (int)strlen(rest);
+                int cap2 = (rlen < cols) ? rlen : cols;
+                if (cap2 >= (int)sizeof(line2)) cap2 = (int)sizeof(line2) - 1;
+                memcpy(line2, rest, cap2);
+                line2[cap2] = '\0';
+            }
+
+            font_puts(fb, 0, hint_row1, line1, PAL_DIM);
+            if (line2[0])
+                font_puts(fb, 0, play_row, line2, PAL_DIM);
+        } else {
+            char hintbuf[16];
+            snprintf(hintbuf, sizeof(hintbuf), "FX %02X ?", hint_fx);
+            font_puts(fb, 0, hint_row0, hintbuf, PAL_DIM);
+        }
     } else if (cursor.playing) {
         char pbuf[28];
         char *p = pbuf;
@@ -660,10 +720,6 @@ void pattern_view_draw_bottom(u8 *fb)
 
 /* ================================================================== */
 /* Input handling                                                     */
-/*                                                                     */
-/* Initial version: cursor navigation, field adjustment, page/step,   */
-/* pattern resize. Playback transport, clipboard copy/cut/paste, undo, */
-/* and note-entry-on-press are added in subsequent commits.            */
 /* ================================================================== */
 
 static void cursor_advance(int nrows)
@@ -690,8 +746,80 @@ void pattern_view_input(u32 kd, u32 kh)
 
     if (navigation_handle_shift(down, held)) return;
 
+    /* Follow mode: when playing, block all input except START (stop)
+     * and SELECT (navigation, handled above by navigation_handle_shift) */
+    if (cursor.follow && cursor.playing) {
+        if (down & KEY_START) {
+            /* Fall through to START handler below */
+        } else {
+            return; /* block all other input */
+        }
+    }
+
     int nrows;
     MT_Pattern *pat = editor_get_current_pattern(&nrows);
+
+    /* ---- R modifier: mute/solo controls (both modes) ---- */
+    if (held & KEY_R) {
+        if (down & KEY_A) {
+            bool muted = (playback_get_mute_mask() >> cursor.channel) & 1;
+            playback_set_mute(cursor.channel, !muted);
+            return;
+        }
+        if (down & KEY_B) {
+            u32 mask = playback_get_mute_mask();
+            bool is_solo = true;
+            for (int i = 0; i < song.channel_count; i++) {
+                if (i != cursor.channel && !((mask >> i) & 1)) {
+                    is_solo = false;
+                    break;
+                }
+            }
+            if (is_solo) {
+                for (int i = 0; i < song.channel_count; i++)
+                    playback_set_mute(i, false);
+            } else {
+                for (int i = 0; i < song.channel_count; i++)
+                    playback_set_mute(i, i != cursor.channel);
+            }
+            return;
+        }
+    }
+
+    /* ---- L+R together: unmute all channels ---- */
+    if (((down & KEY_L) && (held & KEY_R)) ||
+        ((down & KEY_R) && (held & KEY_L))) {
+        for (int i = 0; i < song.channel_count; i++)
+            playback_set_mute(i, false);
+        return;
+    }
+
+    /* ---- L + LEFT/RIGHT: tempo nudge (LGPT-style) ---- */
+    if ((held & KEY_L) && !(held & KEY_R)) {
+        u32 rep_l = keysDownRepeat();
+        if (rep_l & KEY_LEFT) {
+            if (song.initial_tempo > 32) {
+                song.initial_tempo--;
+                if (cursor.playing) playback_set_tempo(song.initial_tempo);
+                snprintf(status_msg, sizeof(status_msg),
+                         "Tempo: %d BPM", song.initial_tempo);
+                status_timer = 60;
+                mt_mark_song_modified();
+            }
+            return;
+        }
+        if (rep_l & KEY_RIGHT) {
+            if (song.initial_tempo < 255) {
+                song.initial_tempo++;
+                if (cursor.playing) playback_set_tempo(song.initial_tempo);
+                snprintf(status_msg, sizeof(status_msg),
+                         "Tempo: %d BPM", song.initial_tempo);
+                status_timer = 60;
+                mt_mark_song_modified();
+            }
+            return;
+        }
+    }
 
     /* ---- X held: page movement / step change / resize ---- */
     if (held & KEY_X) {
@@ -770,34 +898,70 @@ void pattern_view_input(u32 kd, u32 kh)
         return;
     }
 
+    /* ---- Transport: START = pattern loop (LSDJ style) ---- */
+    if (down & KEY_START) {
+        if (cursor.playing) {
+            stop_playback_all();
+        } else {
+            start_pattern_loop();
+        }
+        return;
+    }
+
     /* ==== INSIDE MODE (single channel, all 5 fields) ==== */
     if (cursor.inside) {
         u32 rep = keysDownRepeat();
 
-        /* ---- B modifier ---- */
+        /* ---- B modifier (highest priority) ---- */
         if (held & KEY_B) {
-            /* B+A: delete current field (no clipboard, no undo yet) */
             if (down & KEY_A) {
-                MT_Cell *cell = cursor_cell(pat);
-                if (cell) {
-                    switch (cursor.column) {
-                    case 0:
-                        cell->note  = NOTE_EMPTY;
-                        cell->inst  = 0;
-                        cell->vol   = 0;
-                        cell->fx    = 0;
-                        cell->param = 0;
-                        break;
-                    case 1: cell->inst  = 0; break;
-                    case 2: cell->vol   = 0; break;
-                    case 3: cell->fx    = 0; break;
-                    case 4: cell->param = 0; break;
-                    }
+                if (cursor.selecting && pat) {
+                    u8 r0 = cursor.sel_start_row, r1 = cursor.row;
+                    u8 c0 = cursor.sel_start_col, c1 = cursor.channel;
+                    if (r0 > r1) { u8 t = r0; r0 = r1; r1 = t; }
+                    if (c0 > c1) { u8 t = c0; c0 = c1; c1 = t; }
+                    u8 pi = editor_get_current_pattern_idx();
+                    undo_push_block(pi, r0, r1, c0, c1);
+                    clipboard_copy(pat, r0, r1, c0, c1);
+                    clipboard_clear_block(pat, r0, r1, c0, c1);
+                    cursor.selecting = false;
                     mt_mark_song_modified();
+                } else {
+                    MT_Cell *cell = cursor_cell(pat);
+                    if (cell) {
+                        u8 pi = editor_get_current_pattern_idx();
+                        undo_push_cell(pi, cursor.row, cursor.channel);
+                        switch (cursor.column) {
+                        case 0:
+                            cell->note  = NOTE_EMPTY;
+                            cell->inst  = 0;
+                            cell->vol   = 0;
+                            cell->fx    = 0;
+                            cell->param = 0;
+                            playback_stop_preview();
+                            break;
+                        case 1: cell->inst  = 0; break;
+                        case 2: cell->vol   = 0; break;
+                        case 3: cell->fx    = 0; break;
+                        case 4: cell->param = 0; break;
+                        }
+                        mt_mark_song_modified();
+                    }
                 }
                 return;
             }
-            /* B+arrows: page jump / order navigation */
+            if ((down & KEY_B) && cursor.selecting) {
+                u8 r0 = cursor.sel_start_row, r1 = cursor.row;
+                u8 c0 = cursor.sel_start_col, c1 = cursor.channel;
+                if (r0 > r1) { u8 t = r0; r0 = r1; r1 = t; }
+                if (c0 > c1) { u8 t = c0; c0 = c1; c1 = t; }
+                clipboard_copy(pat, r0, r1, c0, c1);
+                cursor.selecting = false;
+                snprintf(status_msg, sizeof(status_msg),
+                         "Copied %dx%d", r1 - r0 + 1, c1 - c0 + 1);
+                status_timer = 60;
+                return;
+            }
             if (rep & KEY_UP) {
                 if (cursor.row >= 16) cursor.row -= 16;
                 else cursor.row = 0;
@@ -825,35 +989,71 @@ void pattern_view_input(u32 kd, u32 kh)
             return;
         }
 
-        /* ---- A modifier: adjust existing field values ---- */
+        /* ---- A modifier ---- */
         if (held & KEY_A) {
+            if ((down & KEY_START) && cursor.column == 0) {
+                MT_Cell *cell = cursor_cell(pat);
+                if (cell) {
+                    u8 pi = editor_get_current_pattern_idx();
+                    undo_push_cell(pi, cursor.row, cursor.channel);
+                    cell->note = NOTE_OFF;
+                    mt_mark_song_modified();
+                    cursor_advance(nrows);
+                }
+                return;
+            }
+
+            if ((down & KEY_A) && !cursor.selecting) {
+                MT_Cell *cell = cursor_cell(pat);
+                if (cell) {
+                    u8 pi = editor_get_current_pattern_idx();
+                    bool changed = false;
+                    if (cursor.column == 0) {
+                        changed = note_slot_a_press(cell, pi, cursor.row, cursor.channel);
+                    } else if (cursor.column == 1) {
+                        changed = inst_slot_a_press(cell, pi, cursor.row, cursor.channel);
+                    }
+                    if (changed) { mt_mark_song_modified(); }
+                }
+            }
+
             MT_Cell *cell = cursor_cell(pat);
             if (cell) {
                 if (cursor.column == 0) {
                     if (cell->note < 120) {
                         if (rep & KEY_UP) {
+                            u8 pi = editor_get_current_pattern_idx();
+                            undo_push_cell(pi, cursor.row, cursor.channel);
                             if (cell->note + 12 <= 119)
                                 cell->note += 12;
                             else
                                 cell->note = 119;
                         }
                         if (rep & KEY_DOWN) {
+                            u8 pi = editor_get_current_pattern_idx();
+                            undo_push_cell(pi, cursor.row, cursor.channel);
                             if (cell->note >= 12)
                                 cell->note -= 12;
                             else
                                 cell->note = 0;
                         }
                         if (rep & KEY_RIGHT) {
+                            u8 pi = editor_get_current_pattern_idx();
+                            undo_push_cell(pi, cursor.row, cursor.channel);
                             if (cell->note < 119)
                                 cell->note++;
                         }
                         if (rep & KEY_LEFT) {
+                            u8 pi = editor_get_current_pattern_idx();
+                            undo_push_cell(pi, cursor.row, cursor.channel);
                             if (cell->note > 0)
                                 cell->note--;
                         }
                         if (rep & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) {
                             cursor.octave   = cell->note / 12;
                             cursor.semitone = cell->note % 12;
+                            if (down & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT))
+                                playback_preview_note(cell->note, cell->inst);
                         }
                     }
                 } else {
@@ -865,6 +1065,8 @@ void pattern_view_input(u32 kd, u32 kh)
                     case 4: field = &cell->param; break;
                     }
                     if (field && (rep & (KEY_UP|KEY_DOWN|KEY_LEFT|KEY_RIGHT))) {
+                        u8 pi = editor_get_current_pattern_idx();
+                        undo_push_cell(pi, cursor.row, cursor.channel);
                         if (rep & KEY_UP) {
                             u8 hi = (*field >> 4) & 0xF;
                             if (hi < 0xF) *field = ((hi + 1) << 4) | (*field & 0xF);
@@ -929,48 +1131,87 @@ void pattern_view_input(u32 kd, u32 kh)
 
     /* ==== OVERVIEW MODE (all channels compressed) ==== */
 
-    /* B+A: delete cell (no clipboard, no undo yet) */
     if ((held & KEY_B) && (down & KEY_A)) {
-        if (pat) {
+        if (cursor.selecting && pat) {
+            u8 r0 = cursor.sel_start_row, r1 = cursor.row;
+            u8 c0 = cursor.sel_start_col, c1 = cursor.channel;
+            if (r0 > r1) { u8 t = r0; r0 = r1; r1 = t; }
+            if (c0 > c1) { u8 t = c0; c0 = c1; c1 = t; }
+            u8 pi = editor_get_current_pattern_idx();
+            undo_push_block(pi, r0, r1, c0, c1);
+            clipboard_copy(pat, r0, r1, c0, c1);
+            clipboard_clear_block(pat, r0, r1, c0, c1);
+            cursor.selecting = false;
+            mt_mark_song_modified();
+        } else if (pat) {
             MT_Cell *cell = cursor_cell(pat);
             if (cell) {
+                u8 pi = editor_get_current_pattern_idx();
+                undo_push_cell(pi, cursor.row, cursor.channel);
                 cell->note = NOTE_EMPTY;
                 cell->inst = 0;
                 cell->vol = 0;
                 cell->fx = 0;
                 cell->param = 0;
+                playback_stop_preview();
                 mt_mark_song_modified();
             }
         }
         return;
     }
 
-    /* A-held: adjust existing note value */
+    if ((down & KEY_B) && cursor.selecting && pat) {
+        u8 r0 = cursor.sel_start_row, r1 = cursor.row;
+        u8 c0 = cursor.sel_start_col, c1 = cursor.channel;
+        if (r0 > r1) { u8 t = r0; r0 = r1; r1 = t; }
+        if (c0 > c1) { u8 t = c0; c0 = c1; c1 = t; }
+        clipboard_copy(pat, r0, r1, c0, c1);
+        cursor.selecting = false;
+        snprintf(status_msg, sizeof(status_msg),
+                 "Copied %dx%d", r1 - r0 + 1, c1 - c0 + 1);
+        status_timer = 60;
+        return;
+    }
+
     if ((held & KEY_A) &&
         !cursor.selecting &&
         !(held & (KEY_B | KEY_R | KEY_L | MT_SHIFT_KEY))) {
         MT_Cell *cell = cursor_cell(pat);
         if (cell) {
+            u8 pi = editor_get_current_pattern_idx();
+
+            if (down & KEY_A) {
+                if (note_slot_a_press(cell, pi, cursor.row, cursor.channel)) {
+                    mt_mark_song_modified();
+                }
+            }
+
             u32 rep = keysDownRepeat();
             if (cell->note < 120) {
                 if (rep & KEY_UP) {
+                    undo_push_cell(pi, cursor.row, cursor.channel);
                     if (cell->note + 12 <= 119) cell->note += 12;
                     else                        cell->note = 119;
                 }
                 if (rep & KEY_DOWN) {
+                    undo_push_cell(pi, cursor.row, cursor.channel);
                     if (cell->note >= 12) cell->note -= 12;
                     else                  cell->note = 0;
                 }
                 if (rep & KEY_RIGHT) {
+                    undo_push_cell(pi, cursor.row, cursor.channel);
                     if (cell->note < 119) cell->note++;
                 }
                 if (rep & KEY_LEFT) {
+                    undo_push_cell(pi, cursor.row, cursor.channel);
                     if (cell->note > 0) cell->note--;
                 }
                 if (rep & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) {
                     cursor.octave   = cell->note / 12;
                     cursor.semitone = cell->note % 12;
                     mt_mark_song_modified();
+                    if (down & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT))
+                        playback_preview_note(cell->note, cell->inst);
                 }
             }
         }

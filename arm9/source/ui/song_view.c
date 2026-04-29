@@ -1,12 +1,9 @@
 /*
  * song_view.c — Song arrangement view (order table editor).
  *
- * Renders the song arrangement grid and handles order-table editing:
- * pattern assignment, cloning, deletion, navigation, and double-tap
- * pattern cloning.
- *
- * Initial version: clipboard copy/cut/paste of order ranges is added
- * when clipboard.h lands.
+ * Extracted from main.c — renders the song arrangement grid and handles
+ * order-table editing: pattern assignment, cloning, deletion, navigation,
+ * and double-tap pattern cloning.
  */
 
 #include <nds.h>
@@ -14,15 +11,19 @@
 #include <string.h>
 
 #include "song_view.h"
+#include "clipboard.h"
 #include "screen.h"
 #include "font.h"
 #include "song.h"
 #include "editor_state.h"
+#include "playback.h"
 #include "scroll_view.h"
 
 /* ---- Externs from main.c ---- */
 extern char status_msg[64];
 extern int  status_timer;
+/* dirty flags: use mt_mark_song_modified() from editor_state.h */
+/* solo_playback extern removed — START handling centralized in main.c */
 
 /* Sentinel value for empty/end-of-song order positions */
 #define ORDER_EMPTY 0xFF
@@ -40,6 +41,8 @@ static u16 find_unused_pattern(void)
 /* Clone timer: counts down frames since last A tap (for double-tap clone) */
 static u8 clone_timer = 0;
 
+/* Order clipboard now lives in the unified clipboard (clipboard.h). */
+
 /* Insert a new order row at `pos`, shifting everything below down.
  * Assigns `pat` as the pattern. Returns false if full. */
 static bool order_insert_at(u8 pos, u8 pat)
@@ -55,17 +58,69 @@ static bool order_insert_at(u8 pos, u8 pat)
 
 bool song_view_has_clip(void)
 {
-    return false;  /* clipboard not wired yet */
+    return clipboard_has_orders();
 }
 
 bool song_view_paste_orders(void)
 {
-    return false;  /* clipboard not wired yet */
+    if (!clipboard_paste_orders(cursor.order_pos)) return false;
+    mt_mark_song_modified();
+    snprintf(status_msg, sizeof(status_msg),
+             "Pasted %d order(s)", clipboard.order_count);
+    status_timer = 90;
+    return true;
 }
 
 void song_view_input(u32 down, u32 held)
 {
     u32 rep = keysDownRepeat();
+
+    /* -- Selection mode: B = copy, B+A = cut -- */
+    if (cursor.selecting) {
+        if ((held & KEY_B) && (down & KEY_A)) {
+            /* Cut: copy then delete */
+            u8 r0 = cursor.sel_start_row;
+            u8 r1 = cursor.order_pos;
+            if (r0 > r1) { u8 t = r0; r0 = r1; r1 = t; }
+            clipboard_copy_orders(r0, r1);
+            int n = r1 - r0 + 1;
+            if (song.order_count - n < 1) n = song.order_count - 1;
+            for (int i = r0; i < song.order_count - n; i++)
+                song.orders[i] = song.orders[i + n];
+            for (int i = song.order_count - n; i < song.order_count; i++)
+                song.orders[i] = ORDER_EMPTY;
+            song.order_count -= n;
+            if (cursor.order_pos >= song.order_count)
+                cursor.order_pos = song.order_count > 0 ? song.order_count - 1 : 0;
+            cursor.selecting = false;
+            mt_mark_song_modified();
+            snprintf(status_msg, sizeof(status_msg),
+                     "Cut %d order(s)", clipboard.order_count);
+            status_timer = 90;
+            return;
+        }
+        if (down & KEY_B) {
+            /* Copy selection to clipboard */
+            u8 r0 = cursor.sel_start_row;
+            u8 r1 = cursor.order_pos;
+            if (r0 > r1) { u8 t = r0; r0 = r1; r1 = t; }
+            clipboard_copy_orders(r0, r1);
+            cursor.selecting = false;
+            snprintf(status_msg, sizeof(status_msg),
+                     "Copied %d order(s)", clipboard.order_count);
+            status_timer = 90;
+            return;
+        }
+        /* While selecting, d-pad moves cursor to extend selection */
+        if (rep & KEY_UP) {
+            if (cursor.order_pos > 0) cursor.order_pos--;
+        }
+        if (rep & KEY_DOWN) {
+            if (cursor.order_pos + 1 < song.order_count)
+                cursor.order_pos++;
+        }
+        return;
+    }
 
     /* -- B+A: delete single order entry at cursor -- */
     if ((held & KEY_B) && (down & KEY_A)) {

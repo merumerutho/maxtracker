@@ -12,6 +12,7 @@
 #include "clipboard.h"
 #include "editor_state.h"
 #include "undo.h"
+#include "playback.h"
 
 extern char status_msg[64];
 extern int  status_timer;
@@ -209,6 +210,8 @@ bool note_slot_a_press(MT_Cell *cell, u8 pi, u8 row, u8 ch)
             undo_push_cell(pi, row, ch);
             if (note_clipboard.note != NOTE_EMPTY) cell->note = note_clipboard.note;
             if (note_clipboard.inst != 0)          cell->inst = note_clipboard.inst;
+            if (cell->note < 120 && cell->inst != 0)
+                playback_preview_note(cell->note, cell->inst);
             return true;
         }
         u8 note = (u8)(cursor.octave * 12 + cursor.semitone);
@@ -216,6 +219,7 @@ bool note_slot_a_press(MT_Cell *cell, u8 pi, u8 row, u8 ch)
         undo_push_cell(pi, row, ch);
         cell->note = note;
         cell->inst = cursor.instrument;
+        playback_preview_note(cell->note, cell->inst);
         return true;
     }
 
@@ -225,12 +229,16 @@ bool note_slot_a_press(MT_Cell *cell, u8 pi, u8 row, u8 ch)
         if (note_clipboard.note == NOTE_EMPTY) return false;
         undo_push_cell(pi, row, ch);
         cell->note = note_clipboard.note;
+        if (cell->note < 120)
+            playback_preview_note(cell->note, cell->inst);
         return true;
     }
 
     if (note_clipboard.inst == 0) return false;
     undo_push_cell(pi, row, ch);
     cell->inst = note_clipboard.inst;
+    if (cell->note < 120)
+        playback_preview_note(cell->note, cell->inst);
     return true;
 }
 
