@@ -11,6 +11,7 @@
 #include "instrument_view.h"
 #include "sample_view.h"
 #include "disk_view.h"
+#include "undo.h"
 
 bool song_modified  = false;
 bool autosave_dirty = false;
@@ -24,6 +25,7 @@ int main(void)
     irqEnable(IRQ_VBLANK);
 
     song_init();
+    undo_init();
     screen_init();
     ui_apply_key_repeat();
 

@@ -1,0 +1,44 @@
+/*
+ * effects.def — X-macro list of pattern effects.
+ *
+ * Single source of truth for effect metadata, used by:
+ *   - arm9/source/core/effects.c   (lookup tables)
+ *   - arm9/source/ui/pattern_view.c (cursor-row hint)
+ *   - doc/effects.md                (user-facing reference, regenerated)
+ *
+ * Codes match maxmod's IT-style numbering (see lib/maxmod/source/core/mas.c
+ * mpp_Process_Effect): 1='A' … 26='Z'. A 0 fx byte means "no effect".
+ *
+ * Columns: FX(code, letter, short_name, description)
+ *
+ * Effects marked (TODO) exist in the format but are not yet dispatched by
+ * maxmod's per-tick handler — the cell is parsed, the letter is displayed,
+ * but audibly it is a no-op. See doc/effects.md for the full status list.
+ */
+
+FX( 1, 'A', "Set Speed",          "Set ticks per row (01-1F). Lower = faster.")
+FX( 2, 'B', "Position Jump",      "Jump to order position xx, resume at row 0.")
+FX( 3, 'C', "Pattern Break",      "End current row, advance one order, resume at row xx.")
+FX( 4, 'D', "Volume Slide",       "Dx0 slide up by x/tick; D0y slide down by y/tick; DxF fine up; DFy fine down.")
+FX( 5, 'E', "Pitch Slide Down",   "Slide pitch down xx/tick. EFy = fine (1-tick) slide; EEy = extra-fine.")
+FX( 6, 'F', "Pitch Slide Up",     "Slide pitch up xx/tick. FFy = fine; FEy = extra-fine.")
+FX( 7, 'G', "Portamento To Note", "Glide toward the new note at speed xx. Note is not retriggered.")
+FX( 8, 'H', "Vibrato",            "Pitch LFO. x = speed, y = depth.")
+FX( 9, 'I', "Tremor",             "Square-wave volume gate (TODO: not implemented in engine).")
+FX(10, 'J', "Arpeggio",           "Rotate note / note+x semitones / note+y semitones each tick.")
+FX(11, 'K', "Vibrato + VolSlide", "Continue last Hxy; slide volume per Dxy semantics.")
+FX(12, 'L', "Porta + VolSlide",   "Continue last Gxx; slide volume per Dxy semantics.")
+FX(13, 'M', "Set Channel Volume", "Set channel volume (00-40).")
+FX(14, 'N', "Channel VolSlide",   "Channel-volume slide with Dxy encoding.")
+FX(15, 'O', "Sample Offset",      "Start the note from byte offset xx*100h into the sample.")
+FX(16, 'P', "Panning Slide",      "Pan slide with Dxy encoding (TODO: not implemented).")
+FX(17, 'Q', "Retrigger Note",     "Retrigger every y ticks with volume function x (0=copy, 1-5 slide down, 6-F slide up).")
+FX(18, 'R', "Tremolo",            "Volume LFO. x = speed, y = depth.")
+FX(19, 'S', "Extended",           "Sub-command xy. S1x=finetune, S3x=vib wave, S8x=pan, SCx=cut after x ticks, SDx=delay by x ticks, SEx=pattern-row delay.")
+FX(20, 'T', "Set Tempo",          "Txx >= 20h sets BPM xx. 00-0F slides tempo down, 10-1F slides up.")
+FX(21, 'U', "Fine Vibrato",       "Vibrato with 1/4 depth resolution.")
+FX(22, 'V', "Global Volume",      "Set global mix volume (00-80).")
+FX(23, 'W', "Global VolSlide",    "Global-volume slide with Dxy encoding.")
+FX(24, 'X', "Set Panning",        "Set hard panning (00=left, 80=center, FF=right).")
+FX(25, 'Y', "Panbrello",          "Panning LFO (TODO: not implemented).")
+FX(26, 'Z', "MIDI / Filter",      "MIDI macro / resonant filter (TODO: not implemented).")
