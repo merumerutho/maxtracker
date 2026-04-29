@@ -676,12 +676,13 @@ static int mas_load_inner(const char *path, MT_Song *s)
         }
 
         if (pcm_bytes > 0) {
-            smp->pcm_data = (u8 *)malloc(pcm_bytes);
+            smp->pcm_data = (u8 *)malloc(pcm_bytes + 4);
             if (!smp->pcm_data) {
                 load_cleanup(f, instr_offsets, samp_offsets, patt_offsets);
                 song_free();
                 return -4;
             }
+            memset(smp->pcm_data + pcm_bytes, 0, 4);
             /* File cursor is at file_off + 28; PCM starts there */
             if (fread(smp->pcm_data, 1, pcm_bytes, f) != pcm_bytes) {
                 load_cleanup(f, instr_offsets, samp_offsets, patt_offsets);

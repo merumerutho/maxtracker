@@ -71,11 +71,12 @@ void song_init(void)
 
     /* Sample 1 (index 0): default square wave so playback works out of the box */
     {
-        u8 *pcm = (u8 *)malloc(256);
+        u8 *pcm = (u8 *)malloc(256 + 4);
         if (pcm) {
             /* Generate a simple square wave: -64 / +63 */
             for (int i = 0; i < 256; i++)
                 pcm[i] = (u8)((i < 128) ? 0xC0 : 0x3F);  /* signed: -64 / +63 */
+            memset(pcm + 256, 0, 4);
 
             song.samples[0].active         = true;
             song.samples[0].pcm_data       = pcm;

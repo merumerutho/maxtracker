@@ -8,7 +8,7 @@
  *   - Actual pattern data is read live from MT_Pattern cells[][] by ARM7's
  *     patched mmReadPattern (via mt_shared->cells pointer).
  *   - This file only builds the MAS "scaffolding": header, instrument info,
- *     sample info + PCM, stub patterns (just row counts), and order table.
+ *     sample headers (PCM referenced in-place), stub patterns, and order table.
  *   - ARM7 uses the MAS for instrument/sample resolution; patterns come from
  *     the shared state.
  */
@@ -158,22 +158,12 @@ static u32 instrument_data_size(const MT_Instrument *inst)
     return size;
 }
 
-/* Helper: calculate the serialized size of one sample (info + DS header + PCM) */
+/* Helper: calculate the serialized size of one sample (headers only).
+ * PCM is referenced in-place via the ds->point field, not copied. */
 static u32 sample_data_size(const MT_Sample *samp)
 {
-    u32 size = sizeof(mm_mas_sample_info) + sizeof(mm_mas_ds_sample);
-
-    if (samp->active && samp->pcm_data && samp->length > 0) {
-        u32 bps = (samp->format == 1) ? 2 : 1; /* 16-bit or 8-bit */
-        u32 pcm_bytes = samp->length * bps;
-        pcm_bytes = (pcm_bytes + 3) & ~3u; /* 4-byte align */
-        pcm_bytes += 4; /* wraparound bytes */
-        size += pcm_bytes;
-    } else {
-        size += 4; /* 4 bytes silence */
-    }
-
-    return size;
+    (void)samp;
+    return sizeof(mm_mas_sample_info) + sizeof(mm_mas_ds_sample);
 }
 
 /* Helper: serialize one envelope into the buffer, return bytes written */
@@ -223,6 +213,24 @@ static u32 write_envelope(u8 *dest, const MT_Envelope *env)
     return sizeof(mm_mas_envelope) + (u32)env->node_count * sizeof(mm_mas_envelope_node);
 }
 
+/* Patch the 4 wraparound bytes at the end of a sample's PCM allocation.
+ * The DS hardware reads one word past the loop end for interpolation. */
+static void patch_sample_wraparound(const MT_Sample *smp)
+{
+    if (!smp->pcm_data || smp->length == 0) return;
+    u32 bps = (smp->format == 1) ? 2 : 1;
+    u32 pcm_bytes = smp->length * bps;
+    u8 *wrap = smp->pcm_data + pcm_bytes;
+    if (smp->loop_type == 1 && smp->loop_start < smp->length) {
+        u32 wrap_off = smp->loop_start * bps;
+        for (int j = 0; j < 4; j++)
+            wrap[j] = (wrap_off + (u32)j < pcm_bytes) ? smp->pcm_data[wrap_off + j] : 0;
+    } else {
+        memset(wrap, 0, 4);
+    }
+    DC_FlushRange(wrap, 4);
+}
+
 static void build_mas_buffer(void)
 {
     u32 inst_count = song.inst_count;
@@ -256,7 +264,7 @@ static void build_mas_buffer(void)
         if (i < (u32)song.samp_count && song.samples[i].active)
             samp_sizes[i] = sample_data_size(&song.samples[i]);
         else
-            samp_sizes[i] = sizeof(mm_mas_sample_info) + sizeof(mm_mas_ds_sample) + 4;
+            samp_sizes[i] = sizeof(mm_mas_sample_info) + sizeof(mm_mas_ds_sample);
         samp_data_size += samp_sizes[i];
     }
 
@@ -433,7 +441,6 @@ static void build_mas_buffer(void)
             src = &song.samples[i];
 
         if (src) {
-            /* 12 bytes sample info */
             si->default_volume = src->default_volume;
             si->panning        = src->panning;
             si->frequency      = (u16)(src->base_freq / 4);
@@ -442,76 +449,40 @@ static void build_mas_buffer(void)
             si->av_speed       = src->vib_speed;
             si->global_volume  = src->global_volume;
             si->av_rate        = src->vib_rate;
-            si->msl_id         = 0xFFFF; /* Inline sample follows */
+            si->msl_id         = 0xFFFF;
 
-            /* 16 bytes NDS DS sample header.
-             *
-             * Must match mmutil's encoding exactly — the mixer reads these
-             * fields directly to program the DS hardware sound channels.
-             *
-             * Key encoding rules (from mmutil/source/mas.c):
-             *   loop_start:  in words (sample_offset / 4 for 8-bit, / 2 for 16-bit)
-             *   length:      for non-looping = total length in words
-             *                for looping     = loop REGION length in words (union!)
-             *   default_frequency: (base_freq * 1024 + 16384) / 32768
-             */
             mm_mas_ds_sample *ds = (mm_mas_ds_sample *)(samp_base + sizeof(mm_mas_sample_info));
             u32 bps = (src->format == 1) ? 2 : 1;
-            /* DS hardware always uses 32-bit words for length/offset */
             u32 word_div = 4;
 
             if (src->loop_type == 1 && src->pcm_data && src->length > 0) {
-                /* Looping: loop_start + loop_length (both in words) */
                 ds->loop_start  = (src->loop_start * bps) / word_div;
-                u32 loop_end    = src->length;  /* samples */
+                u32 loop_end    = src->length;
                 u32 loop_region = (loop_end > src->loop_start)
                                 ? (loop_end - src->loop_start) : 0;
                 ds->loop_length = (loop_region * bps + 3) / word_div;
             } else if (src->pcm_data && src->length > 0) {
-                /* Non-looping: loop_start=0, length=total in words */
                 ds->loop_start = 0;
                 u32 pcm_bytes = src->length * bps;
                 ds->length = ((pcm_bytes + 3) & ~3u) / 4;
             } else {
                 ds->loop_start = 0;
-                ds->length = 1; /* 4 bytes silence = 1 word */
+                ds->length = 1;
             }
 
             ds->format = (src->format == 1) ? MM_SFORMAT_16BIT : MM_SFORMAT_8BIT;
             ds->repeat_mode = (src->loop_type == 1) ? MM_SREPEAT_FORWARD : MM_SREPEAT_OFF;
-            /* Match mmutil: (freq * 1024 + 16384) / 32768 */
             ds->default_frequency = (u16)(((u32)src->base_freq * 1024 + 16384) / 32768);
-            ds->point = 0;
 
-            /* PCM data */
-            u8 *pcm_dest = (u8 *)ds + sizeof(mm_mas_ds_sample);
-            if (src->pcm_data && src->length > 0) {
-                u32 pcm_bytes = src->length * bps;
-                u32 pcm_aligned = (pcm_bytes + 3) & ~3u;
-                memcpy(pcm_dest, src->pcm_data, pcm_bytes);
-                /* Zero-pad to alignment */
-                if (pcm_aligned > pcm_bytes)
-                    memset(pcm_dest + pcm_bytes, 0, pcm_aligned - pcm_bytes);
-                /* 4 bytes wraparound: copy from loop start if looping, zeros otherwise */
-                if (src->loop_type == 1 && src->loop_start < src->length) {
-                    u32 wrap_off = src->loop_start * bps;
-                    for (int j = 0; j < 4; j++) {
-                        if (wrap_off + (u32)j < pcm_bytes)
-                            pcm_dest[pcm_aligned + j] = src->pcm_data[wrap_off + j];
-                        else
-                            pcm_dest[pcm_aligned + j] = 0;
-                    }
-                } else {
-                    memset(pcm_dest + pcm_aligned, 0, 4);
-                }
-            } else {
-                /* 4 bytes silence */
-                memset(pcm_dest, 0, 4);
-            }
+            /* Point the mixer directly at the existing PCM allocation
+             * instead of copying megabytes into the MAS buffer. */
+            ds->point = (src->pcm_data && src->length > 0)
+                      ? (mm_word)src->pcm_data : 0;
+
+            patch_sample_wraparound(src);
         } else {
-            /* Inactive/stub sample */
             si->default_volume = 64;
-            si->panning        = 0xC0; /* 0x80 | 64 = center */
+            si->panning        = 0xC0;
             si->frequency      = 8363;
             si->av_type        = 0;
             si->av_depth       = 0;
@@ -522,14 +493,11 @@ static void build_mas_buffer(void)
 
             mm_mas_ds_sample *ds = (mm_mas_ds_sample *)(samp_base + sizeof(mm_mas_sample_info));
             ds->loop_start        = 0;
-            ds->length            = 1; /* 1 word = 4 bytes silence */
+            ds->length            = 1;
             ds->format            = MM_SFORMAT_16BIT;
             ds->repeat_mode       = MM_SREPEAT_OFF;
             ds->default_frequency = 8363;
             ds->point             = 0;
-
-            u8 *pcm = (u8 *)ds + sizeof(mm_mas_ds_sample);
-            memset(pcm, 0, 4);
         }
     }
 
@@ -656,6 +624,8 @@ void playback_play_at(u8 order_pos, u8 row)
     shared_state.channel_count = song.channel_count;
     shared_state.pos_state = MT_POS_PACK(order_pos, row, 0);
     DC_FlushRange((void *)&shared_state, sizeof(shared_state));
+
+    DC_FlushRange(mas_buffer, mas_buffer_size);
 
     /* Send MAS address to ARM7, then play command */
     fifoSendValue32(FIFO_MT, MT_MKCMD(MT_CMD_SET_MAS, 0));

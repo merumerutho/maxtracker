@@ -159,9 +159,13 @@ For playback, maxtracker constructs a **minimal MAS header** in RAM. This header
 
 - Module flags (freq_mode, xm_mode, old_mode, etc.)
 - Instrument data (serialized in MAS format -- envelopes, note maps)
-- Sample info + PCM data (serialized in MAS format)
+- Sample headers (info + DS sample struct), with `point` set to the existing PCM allocation
 - **Stub pattern data** (one empty pattern per actual pattern, just row counts)
 - Order table
+
+PCM sample data is NOT copied into the MAS buffer. Each sample's `mm_mas_ds_sample.point` field is set to the address of the permanent `pcm_data` allocation in main RAM. The mixer checks `point` first and uses it directly if non-zero, falling back to inline `data[]` only when `point` is zero. This keeps the MAS buffer under 15 KB regardless of sample size.
+
+All `pcm_data` allocations include 4 extra bytes for DS hardware interpolation wraparound. These bytes are patched by `patch_sample_wraparound()` at build time with a copy of the loop-start data (looping samples) or zeros (one-shot samples).
 
 The actual pattern content is read from flat arrays via the patched `mmReadPattern`. The MAS header provides the "scaffolding" that maxmod needs for instrument/sample lookup, while patterns come from the editing buffers.
 
@@ -169,17 +173,19 @@ This hybrid approach avoids rewriting the instrument and sample loading code in 
 
 ```
 ┌──────────────────────────────────────────────┐
-│ Minimal MAS in RAM                           │
+│ Minimal MAS in RAM (~10 KB)                  │
 │  - Prefix (8 bytes)                          │
 │  - Header (tempo, speed, flags, orders)      │
 │  - Instrument offset table + instrument data │
-│  - Sample offset table + sample info + PCM   │
+│  - Sample offset table + sample headers      │
+│    (point -> existing pcm_data allocations)  │
 │  - Pattern offset table -> stub patterns     │
 │    (each stub: just nrows byte, no data)     │
 └──────────────────────────────────────────────┘
          │
          │ mmPlayMAS(addr) sets up the sequencer
          │ Instruments/samples resolved via offset tables
+         │ Mixer reads PCM from pcm_data via ds->point
          │
          ▼
 ┌──────────────────────────────────────────────┐
@@ -198,13 +204,13 @@ The minimal MAS header must be rebuilt when:
 | Event | What changes | Rebuild scope |
 |-------|-------------|---------------|
 | Instrument parameters changed | Envelope data, note map | Instrument section only |
-| Sample loaded/drawn/deleted | Sample info + PCM | Sample section (expensive if large) |
+| Sample loaded/drawn/deleted | Sample headers (point updated) | Sample section (fast, headers only) |
 | Channel count changed | Header flags | Full header |
 | Tempo/speed changed | Can be set via mmSetModuleTempo | No rebuild needed |
 | Order table changed | Sequence array | Header only (fast) |
 | Pattern added/removed | Pattern stubs + offset table | Pattern section (cheap) |
 
-Most rebuilds are fast (<1ms) because instrument and pattern data is small. Sample rebuilds are expensive if total sample data is large, but this only happens on sample load/delete operations (not during normal editing).
+All rebuilds are fast (<1ms). The MAS buffer contains only metadata and sample headers; PCM data is referenced via `point` pointers, not copied.
 
 ---
 

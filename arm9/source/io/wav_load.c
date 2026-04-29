@@ -265,11 +265,12 @@ int wav_load_ex(const char *path, u32 max_bytes,
     }
 
     /* ---- Read raw PCM data ---- */
-    u8 *raw = (u8 *)malloc(raw_size);
+    u8 *raw = (u8 *)malloc(raw_size + 4);
     if (!raw) {
         fclose(f);
         return WAV_ERR_ALLOC;
     }
+    memset(raw + raw_size, 0, 4);
 
     if (fread(raw, 1, raw_size, f) != raw_size) {
         free(raw);
@@ -288,12 +289,13 @@ int wav_load_ex(const char *path, u32 max_bytes,
     if (bits_per_sample == 24) {
         /* Convert 24-bit to 16-bit */
         u32 total_samples = total_frames * num_channels;
-        s16 *buf16 = (s16 *)malloc(total_samples * sizeof(s16));
+        s16 *buf16 = (s16 *)malloc(total_samples * sizeof(s16) + 4);
         if (!buf16) {
             free(raw);
             return WAV_ERR_ALLOC;
         }
         convert_24_to_16(raw, buf16, total_samples);
+        memset((u8 *)buf16 + total_samples * sizeof(s16), 0, 4);
         free(raw);
         raw = (u8 *)buf16;
         bits_per_sample = 16;
@@ -302,12 +304,13 @@ int wav_load_ex(const char *path, u32 max_bytes,
     } else if (format_tag == WAV_FORMAT_FLOAT) {
         /* Convert 32-bit float to 16-bit */
         u32 total_samples = total_frames * num_channels;
-        s16 *buf16 = (s16 *)malloc(total_samples * sizeof(s16));
+        s16 *buf16 = (s16 *)malloc(total_samples * sizeof(s16) + 4);
         if (!buf16) {
             free(raw);
             return WAV_ERR_ALLOC;
         }
         convert_float_to_16(raw, buf16, total_samples);
+        memset((u8 *)buf16 + total_samples * sizeof(s16), 0, 4);
         free(raw);
         raw = (u8 *)buf16;
         bits_per_sample = 16;

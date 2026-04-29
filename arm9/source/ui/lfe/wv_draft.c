@@ -78,13 +78,14 @@ bool wv_snapshot_restore(WaveformSnapshot *snap, MT_Sample *dst)
 
     if (snap->pcm_bytes == 0) return true;
 
-    u8 *copy = (u8 *)malloc(snap->pcm_bytes);
+    u8 *copy = (u8 *)malloc(snap->pcm_bytes + 4);
     if (!copy) {
         dbg_set_last_error("wv restore: malloc %lu failed",
                            (unsigned long)snap->pcm_bytes);
         return false;
     }
     memcpy(copy, snap->pcm, snap->pcm_bytes);
+    memset(copy + snap->pcm_bytes, 0, 4);
     dst->pcm_data = copy;
     return true;
 }
