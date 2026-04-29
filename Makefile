@@ -26,10 +26,10 @@ MAXMOD_SRC := $(MAXMOD)/maxmod
 LFE_ENABLED ?= 1
 LFE_DIR     := lib/lfe
 
-.PHONY: maxmod_ds7 maxmod_ds9 build_arm7 build_arm9 \
+.PHONY: maxmod_ds7 maxmod_ds9 build_arm7 build_arm9 build_arm9_test \
         lfe_ds9 lfe-test \
         emulator emulator-nosynth native native-nosynth \
-        clean ensure_release ensure_maxmod help
+        test host-test clean ensure_release ensure_maxmod help
 
 # Default: show help
 all: help
@@ -42,6 +42,8 @@ help:
 	@echo "  make emulator-nosynth  - same as emulator, but without the waveform editor"
 	@echo "  make native            - build .nds without embedded data (with waveform editor)"
 	@echo "  make native-nosynth    - same as native, but without the waveform editor"
+	@echo "  make test              - build emulator .nds that runs unit tests on boot"
+	@echo "  make host-test         - compile and run maxtracker unit tests natively on host"
 	@echo "  make lfe-test          - compile and run lfe library tests natively on host"
 	@echo "  make clean             - remove all build artifacts"
 	@echo ""
@@ -78,6 +80,9 @@ build_arm7: maxmod_ds7
 build_arm9: maxmod_ds9 lfe_ds9
 	@$(MAKE) -C arm9 LFE_ENABLED=$(LFE_ENABLED)
 
+build_arm9_test: maxmod_ds9
+	@$(MAKE) -C arm9 EXTRA_CFLAGS="-DUNIT_TESTING"
+
 #---------------------------------------------------------------------------------
 # Emulator build: embed data/ in NitroFS inside the .nds
 # Use for no$gba, DeSmuME, melonDS, etc.
@@ -112,6 +117,28 @@ native-nosynth:
 	@$(MAKE) native LFE_ENABLED=0
 
 #---------------------------------------------------------------------------------
+# Test build: emulator build with UNIT_TESTING defined.
+# Runs all unit tests on boot, then halts.
+# Clean arm9 first to ensure the define takes effect.
+#---------------------------------------------------------------------------------
+test: ensure_release build_arm7
+	@$(MAKE) -C arm9 clean
+	@$(MAKE) -C arm9 EXTRA_CFLAGS="-DUNIT_TESTING"
+	@mkdir -p data
+	ndstool	-c release/$(TARGET).nds \
+		-7 arm7/$(TARGET).elf \
+		-9 arm9/$(TARGET).elf \
+		-b $(GAME_ICON) "$(GAME_TITLE);$(GAME_SUBTITLE1);$(GAME_SUBTITLE2)" \
+		$(_ADDFILES)
+	@echo "Built (test): release/$(TARGET).nds — runs unit tests on boot"
+
+#---------------------------------------------------------------------------------
+# Host-native test: compile and run tests with system gcc (no emulator needed)
+#---------------------------------------------------------------------------------
+host-test:
+	@$(MAKE) -C test run
+
+#---------------------------------------------------------------------------------
 # LFE host tests — independent of maxtracker.
 #---------------------------------------------------------------------------------
 lfe-test:
@@ -123,6 +150,7 @@ clean:
 	$(MAKE) -C $(MAXMOD) -f maxmod.mak SYSTEM=DS9 clean
 	$(MAKE) -C arm9 clean
 	$(MAKE) -C arm7 clean
+	$(MAKE) -C test clean
 	$(MAKE) -C $(LFE_DIR) clean
 	@if [ -f $(LFE_DIR)/Makefile_arm ]; then $(MAKE) -C $(LFE_DIR) -f Makefile_arm clean; fi
 	rm -rf $(MAXMOD)/build $(MAXMOD)/maxmod_build_ds7 $(MAXMOD)/maxmod_build_ds9
