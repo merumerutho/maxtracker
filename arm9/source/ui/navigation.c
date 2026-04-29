@@ -20,6 +20,11 @@
 #include "font.h"
 #include "editor_state.h"
 #include "disk_view.h"
+#include "sample_view.h"
+#ifdef MAXTRACKER_LFE
+#include "waveform_view.h"
+#include "lfe_fx_view.h"
+#endif
 
 /* Navigation: track the screen we came from for UP/DOWN reversibility */
 static ScreenMode nav_vertical_return = SCREEN_PATTERN;
@@ -46,7 +51,7 @@ static u8 get_contextual_instrument(void)
  * SHIFT (SELECT) handler — LSDJ "rooms in a house" connected navigation.
  *
  * Horizontal chain (SELECT+LEFT/RIGHT):
- *   Song <-> Pattern Overview <-> Inside Column <-> Instrument <-> Sample
+ *   Song <-> Pattern Overview <-> Inside Column <-> Instrument <-> Sample [<-> LFE <-> LFE FX]
  *
  * Each RIGHT step goes deeper with context:
  *   Song       -> Pattern at cursor order position
@@ -88,6 +93,22 @@ bool navigation_handle_shift(u32 down, u32 held)
             font_clear(top_fb, PAL_BG);
             handled = true;
             break;
+#ifdef MAXTRACKER_LFE
+        case SCREEN_LFE:
+            waveform_view_close();
+            if (!waveform_view_is_active()) {
+                screen_set_mode(SCREEN_SAMPLE);
+                font_clear(top_fb, PAL_BG);
+            }
+            handled = true;
+            break;
+        case SCREEN_LFE_FX:
+            lfe_fx_view_close();
+            screen_set_mode(SCREEN_LFE);
+            font_clear(top_fb, PAL_BG);
+            handled = true;
+            break;
+#endif
         case SCREEN_INSTRUMENT:
             screen_set_mode(SCREEN_PATTERN);
             cursor.inside = true;
@@ -146,6 +167,20 @@ bool navigation_handle_shift(u32 down, u32 held)
             font_clear(top_fb, PAL_BG);
             handled = true;
             break;
+#ifdef MAXTRACKER_LFE
+        case SCREEN_SAMPLE:
+            waveform_view_open(sample_view_get_selected());
+            screen_set_mode(SCREEN_LFE);
+            font_clear(top_fb, PAL_BG);
+            handled = true;
+            break;
+        case SCREEN_LFE:
+            lfe_fx_view_open();
+            screen_set_mode(SCREEN_LFE_FX);
+            font_clear(top_fb, PAL_BG);
+            handled = true;
+            break;
+#endif
         default:
             break;
         }

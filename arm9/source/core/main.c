@@ -14,6 +14,11 @@
 #include "undo.h"
 #include "playback.h"
 #include "debug_view.h"
+#ifdef MAXTRACKER_LFE
+#include "lfe.h"
+#include "waveform_view.h"
+#include "lfe_fx_view.h"
+#endif
 
 bool song_modified  = false;
 bool autosave_dirty = false;
@@ -31,6 +36,14 @@ int main(void)
     playback_init();
     screen_init();
     dbg_init();
+#ifdef MAXTRACKER_LFE
+    {
+        lfe_status lfe_rc = lfe_init();
+        dbg_log("lfe_init rc=%d ver=%s", (int)lfe_rc, lfe_version());
+        if (lfe_rc != LFE_OK)
+            dbg_set_last_error("lfe_init failed rc=%d", (int)lfe_rc);
+    }
+#endif
     ui_apply_key_repeat();
 
     /* Place a few demo notes so the screen isn't empty */
@@ -102,6 +115,30 @@ int main(void)
             if (current_screen == SCREEN_DISK)
                 disk_view_draw(top_fb, bot_fb);
             break;
+#ifdef MAXTRACKER_LFE
+        case SCREEN_LFE:
+            if (!navigation_handle_shift(kd, kh))
+                waveform_view_input(kd, kh);
+            if (!waveform_view_is_active()) {
+                screen_set_mode(SCREEN_SAMPLE);
+                font_clear(top_fb, PAL_BG);
+                sample_view_draw(top_fb, bot_fb);
+            } else {
+                waveform_view_draw(top_fb, bot_fb);
+            }
+            break;
+        case SCREEN_LFE_FX:
+            if (!navigation_handle_shift(kd, kh))
+                lfe_fx_view_input(kd, kh);
+            if (!lfe_fx_view_is_active()) {
+                screen_set_mode(SCREEN_LFE);
+                font_clear(top_fb, PAL_BG);
+                waveform_view_draw(top_fb, bot_fb);
+            } else {
+                lfe_fx_view_draw(top_fb, bot_fb);
+            }
+            break;
+#endif
         default:
             navigation_handle_shift(kd, kh);
             break;

@@ -7,6 +7,8 @@
     X(PATTERN,    "PAT")    \
     X(INSTRUMENT, "INST")   \
     X(SAMPLE,     "SAMP")   \
+    X(LFE,        "LFE")    \
+    X(LFE_FX,     "LFEFX")  \
     X(SONG,       "SONG")   \
     X(MIXER,      "MIX")    \
     X(DISK,       "DISK")   \
