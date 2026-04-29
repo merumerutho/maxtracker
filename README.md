@@ -65,6 +65,6 @@ LFE uses algorithms and ideas from:
 
 ## License
 
-maxtracker is **GPL-3.0-or-later**. See [COPYING](COPYING) for the
+maxtracker is **GPL-3.0-or-later**. See [LICENSE](LICENSE) for the
 full text. Bundled libraries retain their own licenses: maxmod is ISC,
 LFE is GPL-3.0-or-later.
