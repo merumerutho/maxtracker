@@ -1,8 +1,17 @@
+/*
+ * draw_util.h -- Shared pixel plotting and touch-coordinate helpers.
+ *
+ * NDS VRAM requires 16-bit aligned writes; this helper handles the
+ * read-modify-write for plotting a single 8-bit palette pixel.
+ */
+
 #ifndef MT_DRAW_UTIL_H
 #define MT_DRAW_UTIL_H
 
 #include <nds.h>
 
+/* Plot a single pixel on an 8bpp framebuffer using 16-bit VRAM writes.
+ * Includes bounds checking for safety (NDS screens are 256x192). */
 static inline void plot_pixel(u8 *fb, int x, int y, u8 color)
 {
     if (x < 0 || x >= 256 || y < 0 || y >= 192) return;

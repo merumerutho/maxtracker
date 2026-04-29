@@ -6,6 +6,8 @@
 #include "navigation.h"
 #include "pattern_view.h"
 #include "song_view.h"
+#include "mixer_view.h"
+#include "project_view.h"
 #include "disk_view.h"
 
 bool song_modified  = false;
@@ -62,6 +64,18 @@ int main(void)
                 song_view_input(kd, kh);
             if (current_screen == SCREEN_SONG)
                 song_view_draw(top_fb, bot_fb);
+            break;
+        case SCREEN_MIXER:
+            if (!navigation_handle_shift(kd, kh))
+                mixer_view_input(kd, kh);
+            if (current_screen == SCREEN_MIXER)
+                mixer_view_draw(top_fb, bot_fb);
+            break;
+        case SCREEN_PROJECT:
+            if (!navigation_handle_shift(kd, kh))
+                project_view_input(kd, kh);
+            if (current_screen == SCREEN_PROJECT)
+                project_view_draw(top_fb, bot_fb);
             break;
         case SCREEN_DISK:
             disk_view_input(kd, kh);
