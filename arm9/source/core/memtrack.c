@@ -41,31 +41,19 @@ u32 mt_mem_free_budget(void)
     return MT_RAM_AVAILABLE - u.total;
 }
 
-u32 mt_mem_estimate_mas(u8 patt_count, u8 samp_count, u32 file_size)
+u32 mt_mem_estimate_mas(u8 patt_count, u32 sample_region_bytes)
 {
-    /* Estimate: each pattern uses full 256 rows x 32 channels */
-    u32 patt_mem = (u32)patt_count * MT_PATTERN_SIZE(MT_MAX_ROWS, MT_MAX_CHANNELS);
+    /* Decoded patterns: 64 rows × 32 channels × 5 bytes/cell each.
+     * Compressed patterns in the file are much smaller (RLE), but
+     * we allocate flat arrays for editing. */
+    u32 patt_mem = (u32)patt_count * MT_PATTERN_SIZE(64, MT_MAX_CHANNELS);
 
-    /* Sample PCM is duplicated: once in the file buffer (temporary),
-     * once in malloc'd sample slots (permanent).
-     * Rough estimate: file minus header/pattern overhead = sample data.
-     * Header+offsets ~= 300 + patt_count*40 (RLE patterns are small).
-     * We only count permanent allocations, not the temporary file buffer
-     * since that's freed before playback. */
-    u32 header_est = 300 + (u32)patt_count * 40;
-    u32 samp_mem = (file_size > header_est) ? (file_size - header_est) : 0;
+    /* Sample PCM is stored uncompressed in MAS, so the on-disk region
+     * size (computed from offset tables) closely matches the permanent
+     * allocation. Per-sample headers (28 bytes each) are a tiny fraction. */
+    u32 samp_mem = sample_region_bytes;
 
-    /* MT_Song struct (always allocated in BSS) */
     u32 song_mem = sizeof(MT_Song);
 
-    /* The file buffer is temporary (freed after parsing) so we don't
-     * count it against the permanent budget. However, during loading
-     * both the file buffer AND the song data coexist briefly. */
-    u32 peak_load = file_size; /* temporary, freed after parse */
-
-    /* Return permanent usage estimate (what stays allocated after loading).
-     * The temporary file buffer (~file_size) also needed during load but
-     * freed after parsing. We check permanent against budget. */
-    (void)peak_load;
     return patt_mem + samp_mem + song_mem;
 }

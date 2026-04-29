@@ -14,9 +14,9 @@ mm_mixer_channel mm_mix_channels[NUM_CHANNELS];
 /* Memory tracking stub (normally in memtrack.c).
  * Return 0 = "no bytes needed" so mt_mem_check (which uses `<=`) always
  * passes. Returning 0xFFFFFFFF would mean "needs 4GB" and fail the check. */
-u32 mt_mem_estimate_mas(u8 patt_count, u8 samp_count, u32 file_size)
+u32 mt_mem_estimate_mas(u8 patt_count, u32 sample_region_bytes)
 {
-    (void)patt_count; (void)samp_count; (void)file_size;
+    (void)patt_count; (void)sample_region_bytes;
     return 0;
 }
 

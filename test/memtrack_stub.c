@@ -9,7 +9,7 @@ typedef uint8_t u8; typedef uint32_t u32;
  * (Returning 0xFFFFFFFF would mean "you need 4GB", which fails the check
  * and makes mas_load return its mem_warning code rather than 0.)
  */
-u32 mt_mem_estimate_mas(u8 a, u8 b, u32 c) { (void)a; (void)b; (void)c; return 0; }
+u32 mt_mem_estimate_mas(u8 a, u32 b) { (void)a; (void)b; return 0; }
 
 /*
  * Host-side stubs for globals that live in `main.c` on-device but
