@@ -8,6 +8,8 @@
 #include "song_view.h"
 #include "mixer_view.h"
 #include "project_view.h"
+#include "instrument_view.h"
+#include "sample_view.h"
 #include "disk_view.h"
 
 bool song_modified  = false;
@@ -76,6 +78,18 @@ int main(void)
                 project_view_input(kd, kh);
             if (current_screen == SCREEN_PROJECT)
                 project_view_draw(top_fb, bot_fb);
+            break;
+        case SCREEN_INSTRUMENT:
+            if (!navigation_handle_shift(kd, kh))
+                instrument_view_input(kd, kh);
+            if (current_screen == SCREEN_INSTRUMENT)
+                instrument_view_draw(top_fb, bot_fb);
+            break;
+        case SCREEN_SAMPLE:
+            if (!navigation_handle_shift(kd, kh))
+                sample_view_input(kd, kh);
+            if (current_screen == SCREEN_SAMPLE)
+                sample_view_draw(top_fb, bot_fb);
             break;
         case SCREEN_DISK:
             disk_view_input(kd, kh);
