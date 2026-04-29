@@ -3,9 +3,13 @@
 #include "screen.h"
 #include "editor_state.h"
 #include "navigation.h"
+#include "disk_view.h"
 
 bool song_modified  = false;
 bool autosave_dirty = false;
+
+char status_msg[64] = "";
+int  status_timer   = 0;
 
 int main(void)
 {

@@ -19,6 +19,7 @@
 #include "screen.h"
 #include "font.h"
 #include "editor_state.h"
+#include "disk_view.h"
 
 /* Navigation: track the screen we came from for UP/DOWN reversibility */
 static ScreenMode nav_vertical_return = SCREEN_PATTERN;
@@ -103,6 +104,13 @@ bool navigation_handle_shift(u32 down, u32 held)
             font_clear(top_fb, PAL_BG);
             handled = true;
             break;
+        case SCREEN_DISK:
+            disk_view_cleanup();
+            screen_set_mode(disk_return_screen);
+            font_clear(top_fb, PAL_BG);
+            font_clear(bot_fb, PAL_BG);
+            handled = true;
+            break;
         default:
             break;
         }
@@ -165,6 +173,12 @@ bool navigation_handle_shift(u32 down, u32 held)
         } else if (current_screen == SCREEN_MIXER) {
             screen_set_mode(nav_vertical_return);
             font_clear(top_fb, PAL_BG);
+            handled = true;
+        } else if (current_screen == SCREEN_DISK) {
+            disk_view_cleanup();
+            screen_set_mode(disk_return_screen);
+            font_clear(top_fb, PAL_BG);
+            font_clear(bot_fb, PAL_BG);
             handled = true;
         }
     }
