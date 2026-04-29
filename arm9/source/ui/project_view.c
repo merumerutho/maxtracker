@@ -68,7 +68,7 @@ typedef enum {
     X(CHANNELS,         "Channels",          PK_EDIT)        \
     X(REPEAT_POS,       "Repeat Position",   PK_EDIT)        \
     X(FOLLOW_MODE,      "Follow Mode",       PK_EDIT)        \
-    X(FONT_SIZE,        "Font Size",         PK_EDIT)        \
+    X(FONT,             "Font",              PK_EDIT)        \
     X(DEBUG_OVERLAY,    "Debug Overlay",     PK_EDIT)        \
     X(KEY_REPEAT_DELAY, "Key Repeat Delay",  PK_EDIT)        \
     X(KEY_REPEAT_RATE,  "Key Repeat Rate",   PK_EDIT)        \
@@ -386,11 +386,27 @@ static void adjust_value(ProjRow row, int delta)
     case PROW_FOLLOW_MODE:
         cursor.follow = !cursor.follow;
         break;
-    case PROW_FONT_SIZE:
-        font_set_mode(font_get_mode() == FONT_MODE_BIG
-                      ? FONT_MODE_SMALL : FONT_MODE_BIG);
+    case PROW_FONT: {
+        int small_n = font_face_count(FONT_MODE_SMALL);
+        int big_n   = font_face_count(FONT_MODE_BIG);
+        int total   = small_n + big_n;
+        FontMode m  = font_get_mode();
+        int ci = (m == FONT_MODE_SMALL)
+               ? font_get_face(FONT_MODE_SMALL)
+               : small_n + font_get_face(FONT_MODE_BIG);
+        ci += delta;
+        if (ci < 0) ci = total - 1;
+        if (ci >= total) ci = 0;
+        if (ci < small_n) {
+            font_set_mode(FONT_MODE_SMALL);
+            font_set_face(FONT_MODE_SMALL, ci);
+        } else {
+            font_set_mode(FONT_MODE_BIG);
+            font_set_face(FONT_MODE_BIG, ci - small_n);
+        }
         pattern_view_invalidate_bottom();
         break;
+    }
     case PROW_DEBUG_OVERLAY:
         dbg_toggle();
         break;
@@ -509,9 +525,10 @@ static void draw_top(u8 *fb)
                      cursor.follow ? "On" : "Off");
             val_color = cursor.follow ? PAL_PLAY : PAL_RED;
             break;
-        case PROW_FONT_SIZE:
+        case PROW_FONT:
             snprintf(vbuf, sizeof(vbuf), "%s",
-                     font_get_mode() == FONT_MODE_BIG ? "BIG" : "SMALL");
+                     font_face_name(font_get_mode(),
+                                    font_get_face(font_get_mode())));
             val_color = PAL_NOTE;
             break;
         case PROW_DEBUG_OVERLAY:
