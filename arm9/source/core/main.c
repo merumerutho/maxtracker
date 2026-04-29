@@ -13,6 +13,7 @@
 #include "disk_view.h"
 #include "undo.h"
 #include "playback.h"
+#include "debug_view.h"
 
 bool song_modified  = false;
 bool autosave_dirty = false;
@@ -29,6 +30,7 @@ int main(void)
     undo_init();
     playback_init();
     screen_init();
+    dbg_init();
     ui_apply_key_repeat();
 
     /* Place a few demo notes so the screen isn't empty */
@@ -120,6 +122,9 @@ int main(void)
             if (!playback_is_playing())
                 cursor.playing = false;
         }
+
+        dbg_frame_tick();
+        dbg_draw_overlay(top_fb);
 
         screen_flush();
     }
