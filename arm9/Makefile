@@ -8,6 +8,8 @@ endif
 
 include $(DEVKITARM)/ds_rules
 
+MAXMOD      := $(CURDIR)/../lib
+
 BUILD		:=	build
 SOURCES		:=	source/core source/ui
 INCLUDES	:=	source/core source/ui ../include
@@ -27,9 +29,10 @@ ASFLAGS	:=	-g $(ARCH) -march=armv5te -mtune=arm946e-s
 
 LDFLAGS	=	-specs=ds_arm9.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
-LIBS	:=	-lfilesystem -lfat -lnds9
+LIBS	:=	-lfilesystem -lfat -lnds9 -lmm9 -lm
 
-LIBDIRS	:=	$(LIBNDS)
+LIBDIRS	:=	$(MAXMOD) $(LIBNDS)
+MAXMOD_INC	:=	$(MAXMOD)/maxmod/include
 
 #---------------------------------------------------------------------------------
 ifneq ($(BUILD),$(notdir $(CURDIR)))
@@ -54,10 +57,11 @@ export OFILES	:=	$(addsuffix .o,$(BINFILES)) \
 					$(CFILES:.c=.o) $(SFILES:.s=.o)
 
 export INCLUDE	:=	$(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
+			-I$(MAXMOD_INC) \
 			$(foreach dir,$(LIBDIRS),-I$(dir)/include) \
 			-I$(CURDIR)/$(BUILD)
 
-export LIBPATHS	:=	$(foreach dir,$(LIBDIRS),-L$(dir)/lib)
+export LIBPATHS	:=	-L$(MAXMOD)/build $(foreach dir,$(filter-out $(MAXMOD),$(LIBDIRS)),-L$(dir)/lib)
 
 .PHONY: $(BUILD) clean
 

@@ -1,4 +1,5 @@
 #include <nds.h>
+#include <maxmod7.h>
 
 volatile bool exitflag = false;
 
@@ -16,12 +17,18 @@ static void powerButtonCB(void)
 
 int main(void)
 {
+    dmaFillWords(0, (void *)0x04000400, 0x100);
+
     readUserSettings();
 
     irqInit();
     fifoInit();
 
     SetYtrigger(80);
+
+    installSoundFIFO();
+
+    mmInstall(FIFO_MAXMOD);
 
     installSystemFIFO();
 

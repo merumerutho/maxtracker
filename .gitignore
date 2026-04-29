@@ -3,4 +3,5 @@ reference/
 *.nds
 *.map
 build/
+*_build_*/
 release/
