@@ -12,6 +12,7 @@
 #include "sample_view.h"
 #include "disk_view.h"
 #include "undo.h"
+#include "playback.h"
 
 bool song_modified  = false;
 bool autosave_dirty = false;
@@ -26,6 +27,7 @@ int main(void)
 
     song_init();
     undo_init();
+    playback_init();
     screen_init();
     ui_apply_key_repeat();
 
@@ -104,6 +106,20 @@ int main(void)
         }
 
         if (status_timer > 0) status_timer--;
+
+        playback_update();
+        if (cursor.playing) {
+            cursor.play_row   = playback_get_row();
+            cursor.play_order = playback_get_order();
+
+            if (cursor.follow) {
+                cursor.row       = cursor.play_row;
+                cursor.order_pos = cursor.play_order;
+            }
+
+            if (!playback_is_playing())
+                cursor.playing = false;
+        }
 
         screen_flush();
     }
