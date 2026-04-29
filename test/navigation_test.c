@@ -96,12 +96,21 @@ u8         sample_load_target = 0;
 bool song_modified;
 bool autosave_dirty;
 
+char status_msg[64];
+int  status_timer;
+
+void disk_view_cleanup(void) {}
+
 /* Clipboard + undo — navigation.c's SHIFT+A paste path references these.
  * Stub away the real behavior; the tests don't drive the paste path. */
 #include "clipboard.h"
 MT_Clipboard clipboard;
 bool clipboard_has_block(void) { return false; }
 void clipboard_paste(MT_Pattern *p, u8 r, u8 c) { (void)p; (void)r; (void)c; }
+void clipboard_copy_instrument(u8 i) { (void)i; }
+bool clipboard_paste_instrument(u8 i) { (void)i; return false; }
+
+void song_view_paste_orders(void) {}
 
 #include "undo.h"
 /* The real undo.c is linked for other tests; for this binary we don't

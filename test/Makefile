@@ -58,7 +58,8 @@ PLAYBACK_CMP_SRCS := playback_cmp.c engine_stubs.c \
                       $(MM_ENGINE) \
                       $(ARM9_CORE)/song.c \
                       $(ARM9_CORE)/scale.c \
-                      $(ARM9_IO)/mas_load.c
+                      $(ARM9_IO)/mas_load.c \
+                      $(ARM9_IO)/mas_write.c
 
 PLAYBACK_CMP := playback_cmp
 
@@ -67,7 +68,8 @@ PLAYBACK_CMP := playback_cmp
 READER_CMP_SRCS := reader_cmp.c engine_stubs.c \
                    $(ARM9_CORE)/song.c \
                    $(ARM9_CORE)/scale.c \
-                   $(ARM9_IO)/mas_load.c
+                   $(ARM9_IO)/mas_load.c \
+                   $(ARM9_IO)/mas_write.c
 
 READER_CMP := reader_cmp
 
@@ -90,7 +92,7 @@ WAV_TEST := wav_test
 
 # ---- Filebrowser tests (directory parsing, sort, at_root regression) ----
 
-FB_TEST_SRCS := filebrowser_test.c $(ARM9_IO)/filebrowser.c
+FB_TEST_SRCS := filebrowser_test.c $(ARM9_IO)/filebrowser.c $(ARM9_UI)/scroll_view.c
 
 FB_TEST := filebrowser_test
 
@@ -122,7 +124,7 @@ $(PLAYBACK_CMP): $(PLAYBACK_CMP_SRCS) mm_engine_shim.h nds_shim.h
 	$(CC) $(ENGINE_CFLAGS) -o $@ $(PLAYBACK_CMP_SRCS)
 
 $(READER_CMP): $(READER_CMP_SRCS) nds_shim.h
-	$(CC) $(CFLAGS) -o $@ $(READER_CMP_SRCS)
+	$(CC) $(ENGINE_CFLAGS) -o $@ $(READER_CMP_SRCS)
 
 $(MAS_DIFF): $(MAS_DIFF_SRCS) nds_shim.h
 	$(CC) $(CFLAGS) -o $@ $(MAS_DIFF_SRCS)
