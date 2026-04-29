@@ -11,6 +11,7 @@
  */
 
 #include "mas_load.h"
+#include "mas_write.h"
 #include "memtrack.h"
 
 #include <stdio.h>
@@ -267,116 +268,71 @@ static int parse_instrument(const u8 *buf, u32 size, u32 base_offset,
 /*  Sample parsing                                                     */
 /* ------------------------------------------------------------------ */
 
+#define SAMPLE_HDR_SIZE 28  /* 12-byte info + 16-byte NDS header */
+
 /*
- * Parse one sample's info and inline NDS data into an MT_Sample struct.
- *
- * Reads the 12-byte sample info header, the 16-byte NDS sample header,
- * allocates and copies the PCM data.
+ * Parse the 28-byte sample header (info + NDS header) and populate
+ * all MT_Sample fields except pcm_data. Returns total PCM bytes
+ * needed via *out_pcm_bytes (0 for external/MSL samples).
  */
-static int parse_sample(const u8 *buf, u32 size, u32 base_offset,
-                        u32 samp_offset, MT_Sample *smp)
+static int parse_sample_header(const u8 *hdr, u32 hdr_size,
+                               MT_Sample *smp, u32 *out_pcm_bytes)
 {
-    u32 pos = base_offset + samp_offset;
+    u32 pos = 0;
 
-    if (pos + 12 > size) return -1;
+    if (hdr_size < 12) return -1;
 
-    /* Sample info (12 bytes) — field order matches mm_mas_sample_info struct */
-    smp->default_volume = buf_u8(buf, size, &pos);
-    smp->panning        = buf_u8(buf, size, &pos);
-    u16 frequency       = buf_u16(buf, size, &pos);
-    smp->vib_type       = buf_u8(buf, size, &pos);
-    smp->vib_depth      = buf_u8(buf, size, &pos);
-    smp->vib_speed      = buf_u8(buf, size, &pos);
-    smp->global_volume  = buf_u8(buf, size, &pos);
-    smp->vib_rate       = buf_u16(buf, size, &pos);
-    /* msl_id (u16) — 0xFFFF = inline sample, else external */
-    u16 msl_id          = buf_u16(buf, size, &pos);
+    smp->default_volume = buf_u8(hdr, hdr_size, &pos);
+    smp->panning        = buf_u8(hdr, hdr_size, &pos);
+    u16 frequency       = buf_u16(hdr, hdr_size, &pos);
+    smp->vib_type       = buf_u8(hdr, hdr_size, &pos);
+    smp->vib_depth      = buf_u8(hdr, hdr_size, &pos);
+    smp->vib_speed      = buf_u8(hdr, hdr_size, &pos);
+    smp->global_volume  = buf_u8(hdr, hdr_size, &pos);
+    smp->vib_rate       = buf_u16(hdr, hdr_size, &pos);
+    u16 msl_id          = buf_u16(hdr, hdr_size, &pos);
 
-    smp->base_freq = (u32)frequency * 4;  /* MAS stores freq/4 */
+    smp->base_freq = (u32)frequency * 4;
 
     if (msl_id != 0xFFFF) {
-        /* External sample (MSL reference) — no inline PCM data */
         smp->active = false;
+        *out_pcm_bytes = 0;
         return 0;
     }
 
-    if (pos + 16 > size) return -1;
+    if (hdr_size < SAMPLE_HDR_SIZE) return -1;
 
-    /* Inline NDS sample header (16 bytes).
-     *
-     * mmutil encodes the second u32 as a UNION:
-     *   - non-looping: total sample length (in words)
-     *   - looping:     loop REGION length (in words), NOT total
-     *
-     * The first u32 (loop_start) is also in words, scaled by format:
-     *   - 8-bit:  byte_offset / 4
-     *   - 16-bit: byte_offset / 2
-     */
-    u32 field_start         = buf_u32(buf, size, &pos);  /* loop_start (words) */
-    u32 field_length        = buf_u32(buf, size, &pos);  /* length or loop_length (words) */
-    u8  format_byte         = buf_u8(buf, size, &pos);
-    u8  loop_flag           = buf_u8(buf, size, &pos);
-    buf_u16(buf, size, &pos);  /* sample_rate (already in base_freq) */
-    buf_u32(buf, size, &pos);  /* reserved */
+    u32 field_start  = buf_u32(hdr, hdr_size, &pos);
+    u32 field_length = buf_u32(hdr, hdr_size, &pos);
+    u8  format_byte  = buf_u8(hdr, hdr_size, &pos);
+    u8  loop_flag    = buf_u8(hdr, hdr_size, &pos);
+    /* remaining 6 bytes (sample_rate + reserved) not needed */
 
     smp->format    = format_byte;
     smp->bits      = format_byte ? 16 : 8;
-    /* Use the repeat_mode flag directly — some samples have
-     * MM_SREPEAT_FORWARD with loop_length=0 (loop to end, or ADPCM). */
     smp->loop_type = (loop_flag == MM_SREPEAT_FORWARD) ? 1 : 0;
 
-    /* The DS hardware stores lengths/offsets in 32-bit words regardless of
-     * sample format. word_mul is always 4 to convert words → bytes. */
     u32 bytes_per_sample = (smp->format == 1) ? 2 : 1;
     u32 word_mul = 4;
 
     if (loop_flag == MM_SREPEAT_FORWARD) {
-        /* Looping: field_start = loop_start in words, field_length = loop region in words.
-         * Total PCM = loop_start + loop_length (both in words → convert to samples). */
         u32 ls_bytes  = field_start  * word_mul;
         u32 ll_bytes  = field_length * word_mul;
         smp->loop_start  = ls_bytes / bytes_per_sample;
         smp->loop_length = ll_bytes / bytes_per_sample;
         smp->length      = smp->loop_start + smp->loop_length;
     } else {
-        /* Non-looping: field_length = total length in format-dependent units.
-         * 8-bit: units of 4 bytes (words).  16-bit: units of 2 bytes (halfwords). */
         u32 total_bytes = field_length * word_mul;
         smp->length      = total_bytes / bytes_per_sample;
         smp->loop_start  = 0;
         smp->loop_length = 0;
     }
 
-    /* Allocate and copy PCM data */
-    u32 total_pcm_bytes = smp->length * bytes_per_sample;
-    if (total_pcm_bytes > 0) {
-        u32 alloc_bytes = total_pcm_bytes;
-        if (pos + alloc_bytes > size)
-            return -1;
-
-        smp->pcm_data = (u8 *)malloc(alloc_bytes);
-        if (!smp->pcm_data) return -1;
-
-        memcpy(smp->pcm_data, buf + pos, alloc_bytes);
-        pos += alloc_bytes;
-
-        /* Skip 4 bytes wraparound padding */
-        u32 pad = 4;
-        if (pos + pad <= size)
-            pos += pad;
-        else
-            pos = size;
-    } else {
-        smp->pcm_data = NULL;
-    }
-
-    /* Align pos to 4 */
-    pos = (pos + 3) & ~3u;
-
-    smp->active = true;
-    smp->drawn  = false;
+    smp->active  = true;
+    smp->drawn   = false;
     smp->name[0] = '\0';
 
+    *out_pcm_bytes = smp->length * bytes_per_sample;
     return 0;
 }
 
@@ -513,7 +469,27 @@ static int parse_pattern(const u8 *buf, u32 size, u32 base_offset,
 /*  Main loader                                                        */
 /* ------------------------------------------------------------------ */
 
-int mas_load(const char *path, MT_Song *s)
+/*
+ * Streaming loader: reads items individually from disk via fseek+fread
+ * instead of buffering the entire file. This halves peak RAM usage for
+ * sample-heavy files because PCM data is fread'd directly into its
+ * permanent allocation instead of being duplicated via a temp buffer.
+ */
+
+/* Helper: cleanup all offset arrays and close the file */
+static void load_cleanup(FILE *f, u32 *io, u32 *so, u32 *po)
+{
+    free(po); free(so); free(io);
+    if (f) fclose(f);
+}
+
+/* Max size of a single instrument's MAS data (12-byte fixed header +
+ * 3 envelopes at 8+25*4=108 each + 240-byte full notemap). */
+#define INST_BUF_SIZE 576
+
+#define SWAP_BACKUP_PATH "./data/.swap.mas"
+
+static int mas_load_inner(const char *path, MT_Song *s)
 {
     FILE *f = fopen(path, "rb");
     if (!f)
@@ -531,30 +507,23 @@ int mas_load(const char *path, MT_Song *s)
 
     u32 file_size = (u32)file_len;
 
-    /* Read entire file into a temporary buffer */
-    u8 *buf = (u8 *)malloc(file_size);
-    if (!buf) {
-        fclose(f);
-        return -4;
-    }
-
-    if (fread(buf, 1, file_size, f) != file_size) {
-        free(buf);
+    /* ---- Read header into a stack buffer (284 bytes) ---- */
+    u8 hdr_buf[MAS_PREFIX_SIZE + MAS_HEADER_SIZE];
+    if (fread(hdr_buf, 1, sizeof(hdr_buf), f) != sizeof(hdr_buf)) {
         fclose(f);
         return -2;
     }
-    fclose(f);
 
     /* ---- MAS prefix (8 bytes) ---- */
     u32 pos = 0;
-    /* u32 body_size = */ buf_u32(buf, file_size, &pos);
-    u8 type    = buf_u8(buf, file_size, &pos);
-    /* u8 version = */ buf_u8(buf, file_size, &pos);
-    buf_u8(buf, file_size, &pos);  /* reserved */
-    buf_u8(buf, file_size, &pos);  /* reserved */
+    /* u32 body_size = */ buf_u32(hdr_buf, sizeof(hdr_buf), &pos);
+    u8 type = buf_u8(hdr_buf, sizeof(hdr_buf), &pos);
+    /* u8 version = */ buf_u8(hdr_buf, sizeof(hdr_buf), &pos);
+    buf_u8(hdr_buf, sizeof(hdr_buf), &pos);  /* reserved */
+    buf_u8(hdr_buf, sizeof(hdr_buf), &pos);  /* reserved */
 
     if (type != MAS_TYPE_SONG) {
-        free(buf);
+        fclose(f);
         return -3;
     }
 
@@ -562,21 +531,16 @@ int mas_load(const char *path, MT_Song *s)
     song_free();
     memset(s, 0, sizeof(MT_Song));
 
-    /*
-     * base_offset: all internal offsets in the MAS file are relative
-     * to this position (the start of the module header, right after
-     * the 8-byte prefix).
-     */
     u32 base_offset = MAS_PREFIX_SIZE;
 
     /* ---- Module header (276 bytes) ---- */
     pos = base_offset;
 
-    u8 order_count = buf_u8(buf, file_size, &pos);
-    u8 inst_count  = buf_u8(buf, file_size, &pos);
-    u8 samp_count  = buf_u8(buf, file_size, &pos);
-    u8 patt_count  = buf_u8(buf, file_size, &pos);
-    u8 flags       = buf_u8(buf, file_size, &pos);
+    u8 order_count = buf_u8(hdr_buf, sizeof(hdr_buf), &pos);
+    u8 inst_count  = buf_u8(hdr_buf, sizeof(hdr_buf), &pos);
+    u8 samp_count  = buf_u8(hdr_buf, sizeof(hdr_buf), &pos);
+    u8 patt_count  = buf_u8(hdr_buf, sizeof(hdr_buf), &pos);
+    u8 flags       = buf_u8(hdr_buf, sizeof(hdr_buf), &pos);
 
     s->link_gxx     = (flags & MAS_FLAG_LINK_GXX)   ? true : false;
     s->old_effects  = (flags & (1 << 1))           ? true : false;
@@ -584,62 +548,36 @@ int mas_load(const char *path, MT_Song *s)
     s->xm_mode      = (flags & MAS_FLAG_XM_MODE)   ? true : false;
     s->old_mode     = (flags & MAS_FLAG_OLD_MODE)   ? true : false;
 
-    s->global_volume   = buf_u8(buf, file_size, &pos);
-    s->initial_speed   = buf_u8(buf, file_size, &pos);
-    s->initial_tempo   = buf_u8(buf, file_size, &pos);
-    s->repeat_position = buf_u8(buf, file_size, &pos);
+    s->global_volume   = buf_u8(hdr_buf, sizeof(hdr_buf), &pos);
+    s->initial_speed   = buf_u8(hdr_buf, sizeof(hdr_buf), &pos);
+    s->initial_tempo   = buf_u8(hdr_buf, sizeof(hdr_buf), &pos);
+    s->repeat_position = buf_u8(hdr_buf, sizeof(hdr_buf), &pos);
 
-    /* 3 reserved bytes */
-    buf_u8(buf, file_size, &pos);
-    buf_u8(buf, file_size, &pos);
-    buf_u8(buf, file_size, &pos);
+    buf_u8(hdr_buf, sizeof(hdr_buf), &pos);  /* reserved */
+    buf_u8(hdr_buf, sizeof(hdr_buf), &pos);
+    buf_u8(hdr_buf, sizeof(hdr_buf), &pos);
 
-    /* Channel volumes (32 bytes) */
     for (int i = 0; i < MAS_MAX_CHANNELS; i++)
-        s->channel_volume[i] = buf_u8(buf, file_size, &pos);
+        s->channel_volume[i] = buf_u8(hdr_buf, sizeof(hdr_buf), &pos);
 
-    /* Channel panning (32 bytes) */
     for (int i = 0; i < MAS_MAX_CHANNELS; i++)
-        s->channel_panning[i] = buf_u8(buf, file_size, &pos);
+        s->channel_panning[i] = buf_u8(hdr_buf, sizeof(hdr_buf), &pos);
 
-    /* Pattern order table (200 bytes) */
     s->order_count = order_count;
     for (int i = 0; i < MAS_MAX_ORDERS; i++)
-        s->orders[i] = buf_u8(buf, file_size, &pos);
+        s->orders[i] = buf_u8(hdr_buf, sizeof(hdr_buf), &pos);
 
-    /* Flags -> MT_Song fields */
     s->freq_linear = (flags & MAS_FLAG_FREQ_MODE) != 0;
     s->xm_mode     = (flags & MAS_FLAG_XM_MODE) != 0;
 
-    /* Store counts */
     s->inst_count = inst_count;
     s->samp_count = samp_count;
     s->patt_count = patt_count;
 
-    s->name[0] = '\0';  /* MAS has no song name */
+    s->name[0] = '\0';
 
-    /* ---- Offset tables ---- */
-    /* pos is now at base_offset + 276 */
-
-    /* ---- Pre-flight memory check ----
-     *
-     * mt_mem_estimate_mas is a conservative upper bound on how much
-     * RAM the decoded song will occupy. If we don't have the budget,
-     * abort up-front rather than do a partial load that leaves the
-     * user with half a song and a cryptic "LOW RAM" message. The
-     * caller maps return code -6 to "file too large for RAM".
-     *
-     * Mid-load allocation failures (pattern alloc that the pre-flight
-     * missed) still fall through to the `mem_warning` path below and
-     * return rc=1 — a user-visible "partial load" notice. */
-    bool mem_warning = false;
-    {
-        u32 estimated = mt_mem_estimate_mas(patt_count, samp_count, file_size);
-        if (!mt_mem_check(estimated)) {
-            free(buf);
-            return -6;
-        }
-    }
+    /* ---- Read offset tables from disk ---- */
+    /* File cursor is already at byte 284 (end of header) */
 
     u32 *instr_offsets = NULL;
     u32 *samp_offsets  = NULL;
@@ -647,82 +585,207 @@ int mas_load(const char *path, MT_Song *s)
 
     if (inst_count > 0) {
         instr_offsets = (u32 *)malloc(inst_count * sizeof(u32));
-        if (!instr_offsets) { free(buf); return -4; }
-        for (int i = 0; i < inst_count; i++)
-            instr_offsets[i] = buf_u32(buf, file_size, &pos);
+        if (!instr_offsets) { fclose(f); return -4; }
+        if (fread(instr_offsets, sizeof(u32), inst_count, f) != inst_count) {
+            load_cleanup(f, instr_offsets, NULL, NULL);
+            return -2;
+        }
     }
 
     if (samp_count > 0) {
         samp_offsets = (u32 *)malloc(samp_count * sizeof(u32));
-        if (!samp_offsets) { free(instr_offsets); free(buf); return -4; }
-        for (int i = 0; i < samp_count; i++)
-            samp_offsets[i] = buf_u32(buf, file_size, &pos);
+        if (!samp_offsets) { load_cleanup(f, instr_offsets, NULL, NULL); return -4; }
+        if (fread(samp_offsets, sizeof(u32), samp_count, f) != samp_count) {
+            load_cleanup(f, instr_offsets, samp_offsets, NULL);
+            return -2;
+        }
     }
 
     if (patt_count > 0) {
         patt_offsets = (u32 *)malloc(patt_count * sizeof(u32));
-        if (!patt_offsets) { free(samp_offsets); free(instr_offsets); free(buf); return -4; }
-        for (int i = 0; i < patt_count; i++)
-            patt_offsets[i] = buf_u32(buf, file_size, &pos);
+        if (!patt_offsets) { load_cleanup(f, instr_offsets, samp_offsets, NULL); return -4; }
+        if (fread(patt_offsets, sizeof(u32), patt_count, f) != patt_count) {
+            load_cleanup(f, instr_offsets, samp_offsets, patt_offsets);
+            return -2;
+        }
     }
 
-    /* ---- Instruments ---- */
+    /* ---- Pre-flight memory check ---- */
+    bool mem_warning = false;
+    {
+        /* Compute actual sample region size from offset tables */
+        u32 sample_region = 0;
+        if (samp_count > 0) {
+            u32 samp_start = samp_offsets[0];
+            u32 samp_end;
+            if (patt_count > 0)
+                samp_end = patt_offsets[0];
+            else
+                samp_end = file_size - base_offset;
+            sample_region = (samp_end > samp_start) ? (samp_end - samp_start) : 0;
+        }
+        u32 estimated = mt_mem_estimate_mas(patt_count, sample_region);
+        if (!mt_mem_check(estimated)) {
+            load_cleanup(f, instr_offsets, samp_offsets, patt_offsets);
+            return -6;
+        }
+    }
+
+    /* ---- Instruments (fseek+fread per instrument) ---- */
+    u8 inst_buf[INST_BUF_SIZE];
+
     for (int i = 0; i < inst_count; i++) {
-        if (parse_instrument(buf, file_size, base_offset,
-                             instr_offsets[i], &s->instruments[i]) != 0) {
-            free(patt_offsets); free(samp_offsets); free(instr_offsets);
-            free(buf);
+        u32 file_off = base_offset + instr_offsets[i];
+        u32 avail = (file_off < file_size) ? (file_size - file_off) : 0;
+        u32 chunk = (avail < INST_BUF_SIZE) ? avail : INST_BUF_SIZE;
+
+        if (fseek(f, (long)file_off, SEEK_SET) != 0 ||
+            fread(inst_buf, 1, chunk, f) != chunk) {
+            load_cleanup(f, instr_offsets, samp_offsets, patt_offsets);
+            song_free();
+            return -5;
+        }
+
+        if (parse_instrument(inst_buf, chunk, 0, 0,
+                             &s->instruments[i]) != 0) {
+            load_cleanup(f, instr_offsets, samp_offsets, patt_offsets);
             song_free();
             return -5;
         }
     }
 
-    /* ---- Samples ---- */
+    /* ---- Samples (header from disk, PCM fread'd into final slot) ---- */
     for (int i = 0; i < samp_count; i++) {
-        if (parse_sample(buf, file_size, base_offset,
-                         samp_offsets[i], &s->samples[i]) != 0) {
-            free(patt_offsets); free(samp_offsets); free(instr_offsets);
-            free(buf);
+        u32 file_off = base_offset + samp_offsets[i];
+        u8 samp_hdr[SAMPLE_HDR_SIZE];
+
+        if (fseek(f, (long)file_off, SEEK_SET) != 0 ||
+            fread(samp_hdr, 1, SAMPLE_HDR_SIZE, f) != SAMPLE_HDR_SIZE) {
+            load_cleanup(f, instr_offsets, samp_offsets, patt_offsets);
             song_free();
             return -5;
         }
+
+        u32 pcm_bytes = 0;
+        MT_Sample *smp = &s->samples[i];
+        if (parse_sample_header(samp_hdr, SAMPLE_HDR_SIZE,
+                                smp, &pcm_bytes) != 0) {
+            load_cleanup(f, instr_offsets, samp_offsets, patt_offsets);
+            song_free();
+            return -5;
+        }
+
+        if (pcm_bytes > 0) {
+            smp->pcm_data = (u8 *)malloc(pcm_bytes);
+            if (!smp->pcm_data) {
+                load_cleanup(f, instr_offsets, samp_offsets, patt_offsets);
+                song_free();
+                return -4;
+            }
+            /* File cursor is at file_off + 28; PCM starts there */
+            if (fread(smp->pcm_data, 1, pcm_bytes, f) != pcm_bytes) {
+                load_cleanup(f, instr_offsets, samp_offsets, patt_offsets);
+                song_free();
+                return -5;
+            }
+        } else {
+            smp->pcm_data = NULL;
+        }
     }
 
-    /* ---- Channel count (must be set before pattern allocation) ---- */
-    /* Always use 32 channels — the user may want to add more channels,
-     * and external MAS files may have data in any of the 32 channels. */
+    /* ---- Channel count ---- */
     s->channel_count = MT_MAX_CHANNELS;
 
-    /* ---- Patterns ---- */
+    /* ---- Patterns (fseek+fread per pattern into temp buffer) ---- */
     bool xm_mode = (flags & MAS_FLAG_XM_MODE) != 0;
 
     for (int i = 0; i < patt_count; i++) {
-        /* Pre-read the row count from the pattern data (first byte = nrows-1) */
-        u32 patt_pos = base_offset + patt_offsets[i];
-        u16 actual_nrows = 64;
-        if (patt_pos < file_size)
-            actual_nrows = (u16)buf[patt_pos] + 1;
+        u32 file_off = base_offset + patt_offsets[i];
+
+        /* Compute compressed size from offset gap */
+        u32 next_off;
+        if (i + 1 < patt_count)
+            next_off = base_offset + patt_offsets[i + 1];
+        else
+            next_off = file_size;
+        u32 chunk_size = (next_off > file_off) ? (next_off - file_off) : 0;
+        if (chunk_size == 0 || chunk_size > 65536) {
+            mem_warning = true;
+            continue;
+        }
+
+        /* Read the first byte to get nrows before allocating the pattern */
+        u8 nrows_byte;
+        if (fseek(f, (long)file_off, SEEK_SET) != 0 ||
+            fread(&nrows_byte, 1, 1, f) != 1) {
+            mem_warning = true;
+            continue;
+        }
+        u16 actual_nrows = (u16)nrows_byte + 1;
 
         MT_Pattern *pat = song_alloc_pattern((u8)i, actual_nrows, s->channel_count);
         if (!pat) {
-            /* Out of memory — stop loading patterns but keep what we have */
             mem_warning = true;
             break;
         }
 
-        if (parse_pattern(buf, file_size, base_offset, patt_offsets[i],
-                          pat, xm_mode) != 0) {
-            /* Parse error on this pattern — skip it but continue */
+        /* Read full compressed pattern into temp buffer */
+        u8 *patt_buf = (u8 *)malloc(chunk_size);
+        if (!patt_buf) {
             mem_warning = true;
+            break;
         }
+
+        fseek(f, (long)file_off, SEEK_SET);
+        if (fread(patt_buf, 1, chunk_size, f) != chunk_size) {
+            free(patt_buf);
+            mem_warning = true;
+            continue;
+        }
+
+        if (parse_pattern(patt_buf, chunk_size, 0, 0, pat, xm_mode) != 0)
+            mem_warning = true;
+
+        free(patt_buf);
     }
 
     /* ---- Cleanup ---- */
-    free(patt_offsets);
-    free(samp_offsets);
-    free(instr_offsets);
-    free(buf);
+    load_cleanup(f, instr_offsets, samp_offsets, patt_offsets);
 
-    /* Return 1 for "loaded with warnings" (some patterns/samples may be missing) */
     return mem_warning ? 1 : 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Public wrapper: backup current song before loading, restore on fail */
+/* ------------------------------------------------------------------ */
+
+int mas_load(const char *path, MT_Song *s)
+{
+    bool has_data = false;
+    for (int i = 0; i < MT_MAX_PATTERNS && !has_data; i++)
+        has_data = (s->patterns[i] != NULL);
+    for (int i = 0; i < MT_MAX_SAMPLES && !has_data; i++)
+        has_data = s->samples[i].active;
+
+    bool backup_ok = false;
+    if (has_data)
+        backup_ok = (mas_write(SWAP_BACKUP_PATH, s) == 0);
+
+    song_free();
+
+    int rc = mas_load_inner(path, s);
+
+    if (rc < 0 && backup_ok) {
+        song_free();
+        int restore = mas_load_inner(SWAP_BACKUP_PATH, s);
+        remove(SWAP_BACKUP_PATH);
+        if (restore >= 0)
+            return MAS_LOAD_RESTORED;
+        return rc;
+    }
+
+    if (backup_ok)
+        remove(SWAP_BACKUP_PATH);
+
+    return rc;
 }

@@ -247,7 +247,6 @@ void disk_view_input(u32 kd, u32 kh)
             if (waveform_view_is_active())
                 waveform_view_close();
 #endif
-            song_free();
             int err = mas_load(sel, &song);
             if (err == 0 || err == 1) {
                 if (err == 1)
@@ -265,6 +264,10 @@ void disk_view_input(u32 kd, u32 kh)
                 undo_init();
                 screen_set_mode(SCREEN_PATTERN);
                 font_clear(top_fb, PAL_BG);
+            } else if (err == MAS_LOAD_RESTORED) {
+                snprintf(status_msg, sizeof(status_msg),
+                         "Load failed, previous song kept");
+                status_timer = 240;
             } else {
                 const char *errstr = "unknown";
                 switch (err) {
