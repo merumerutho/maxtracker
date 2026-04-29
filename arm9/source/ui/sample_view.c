@@ -5,7 +5,14 @@
  * Bottom screen: sample metadata (length, rate, loop points, volume).
  *
  * This file is read-only with respect to sample data: it visualizes
- * an existing sample but does not allow editing or generation.
+ * an existing sample but does not allow editing or generation. The
+ * editor — drawing, synthesis, FX — lives in the Waveform Editor
+ * (lib/lfe + arm9/source/ui/waveform_view.c) and is opened from this
+ * view via SELECT+RIGHT when MAXTRACKER_LFE is defined.
+ *
+ * The free-drawing code that used to live here was lifted into the
+ * lfe library in Phase 2. The split is: maxtracker visualizes,
+ * waveform_view edits.
  */
 
 #include "sample_view.h"
@@ -13,9 +20,14 @@
 #include "font.h"
 #include "draw_util.h"
 #include "waveform_render.h"
-#include "editor_state.h"   /* cursor.instrument for current sample */
+#include "editor_state.h"  /* cursor.instrument for current sample */
 #include "song.h"
+#include "playback.h"      /* playback_rebuild_mas for live edits */
 #include "filebrowser.h"
+#include "text_input.h"
+#ifdef MAXTRACKER_LFE
+#include "waveform_view.h" /* Waveform Editor menu (Phase 0+) */
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,19 +41,21 @@ extern int         status_timer;
 extern ScreenMode  disk_return_screen;
 /* dirty flags: use mt_mark_song_modified() from editor_state.h */
 
-/* Internal state. */
+/* Internal state. Drawing fields were removed in Phase 2 — they live
+ * in waveform_view.c now. */
 static struct {
     u8   selected;      /* current sample index (0-based, display as 1-based) */
-    u8   action_row;    /* 0 = Load, 1 = Save */
-    bool confirm_pending;     /* action-row LOAD confirm */
+    u8   action_row;    /* 0 = Load, 1 = Save, 2 = Rename */
+    bool confirm_pending;     /* action-row SAVE/LOAD confirm */
     bool delete_confirm_pending; /* B+A two-tap confirm to free PCM */
     int  zoom;          /* waveform zoom level: 0=fit, 1=2x, 2=4x, etc. */
     int  scroll;        /* horizontal scroll offset in samples */
 } sv;
 
-#define SV_ACTION_COUNT 2
+#define SV_ACTION_COUNT 3
 #define SV_ACTION_LOAD    0
 #define SV_ACTION_SAVE    1
+#define SV_ACTION_RENAME  2
 
 void sample_view_set_selected(u8 index)
 {
@@ -72,6 +86,11 @@ static void sv_open_load_browser(void)
     font_clear(bot_fb, PAL_BG);
 }
 
+/* Open the disk browser in SAVE mode so the user can pick a folder.
+ * The actual write is performed in main.c's SCREEN_DISK handler when
+ * START fires (and after any overwrite-confirm dialog). The filename
+ * is composed from the sample's name (sanitized) or "sample_XX" as
+ * a fallback. */
 static void sv_open_save_browser(void)
 {
     MT_Sample *s = &song.samples[sv.selected];
@@ -110,6 +129,8 @@ static void draw_waveform_top(u8 *fb, MT_Sample *s)
     int wh = wave_y_height();
 
     if (!s || !s->active || !s->pcm_data || s->length == 0) {
+        /* Still clear + center-line the scope region so empty slots
+         * look consistent with populated ones. */
         WaveformRenderCfg cfg = {
             .fb = fb, .y_top = wy, .y_height = wh,
             .color_bg = PAL_BG, .color_center = PAL_DIM,
@@ -165,18 +186,30 @@ static void draw_bottom_sample(u8 *bot_fb, MT_Sample *s)
     } else {
         font_puts(bot_fb, 1, 2, "(empty)", PAL_DIM);
         font_puts(bot_fb, 1, 4, "Load a WAV from the disk screen",     PAL_DIM);
+#ifdef MAXTRACKER_LFE
+        font_puts(bot_fb, 1, 5, "or press Y+A to open the Waveform Editor",
+                  PAL_DIM);
+#endif
     }
 
     int help_row = font_scale_row(30);
     int info_row = font_scale_row(31);
 
+    /* Transient status line (row 29 — just above help) so "Saved:" /
+     * "Partial load:" messages from the disk screen remain visible
+     * after auto-return. Countdown happens in the main loop. */
     int status_row = font_scale_row(29);
     font_fill_row(bot_fb, status_row, 0, FONT_COLS, PAL_BG);
     if (status_timer > 0)
         font_puts(bot_fb, 1, status_row, status_msg, PAL_WHITE);
 
     font_fill_row(bot_fb, help_row, 0, FONT_COLS, PAL_HEADER_BG);
+#ifdef MAXTRACKER_LFE
+    font_puts(bot_fb, 0, help_row, "B+A:del  L/R:prev/next  X:zoom  SEL+R:LFE",
+              PAL_DIM);
+#else
     font_puts(bot_fb, 0, help_row, "B+A:del  L/R:prev/next  X:zoom", PAL_DIM);
+#endif
     font_fill_row(bot_fb, info_row, 0, FONT_COLS, PAL_HEADER_BG);
     if (sv.zoom == 0)
         font_printf(bot_fb, 0, info_row, PAL_DIM, "Sample %02X/%02X  Zoom:FIT",
@@ -193,6 +226,12 @@ static void draw_bottom_sample(u8 *bot_fb, MT_Sample *s)
 
 void sample_view_draw(u8 *top_fb, u8 *bot_fb)
 {
+    /* Modal keyboard steals both screens. On the close frame this also
+     * does a one-shot fb clear so the keyboard cells don't ghost into
+     * the sample view underneath. */
+    if (text_input_draw_and_consume(top_fb, bot_fb))
+        return;
+
     MT_Sample *s = (sv.selected < MT_MAX_SAMPLES) ?
                        &song.samples[sv.selected] : NULL;
 
@@ -233,14 +272,21 @@ void sample_view_draw(u8 *top_fb, u8 *bot_fb)
                     "Rate:    %lu Hz", s->base_freq);
     }
 
-    /* Action buttons (Load / Save) — navigable with UP/DOWN, A triggers. */
+    /* Action buttons (Load / Save / Rename) — navigable with UP/DOWN,
+     * A triggers. Anchor the action block to the footer so it never
+     * overlaps the help/transport strip in BIG mode (where the
+     * content area shrinks from 30 to 22 rows). */
     {
         static const char *labels[SV_ACTION_COUNT] = {
             ">> Load .wav",
             ">> Save .wav",
+            ">> Rename",
         };
-        int base = footer - SV_ACTION_COUNT - 1;
+        int base = footer - SV_ACTION_COUNT - 1;  /* 1-row gap above help */
+        /* Must not overlap the 3 param rows at param_hdr+1..+3. */
         if (base < param_hdr + 4) base = param_hdr + 4;
+        /* Last-resort clamp if even the param rows would overflow
+         * (tiny screens / odd font modes). */
         if (base + SV_ACTION_COUNT > footer)
             base = footer - SV_ACTION_COUNT;
         for (int i = 0; i < SV_ACTION_COUNT; i++) {
@@ -251,8 +297,10 @@ void sample_view_draw(u8 *top_fb, u8 *bot_fb)
             u8 col = selected ? PAL_ORANGE : PAL_INST;
             font_puts(top_fb, 1, row, labels[i], col);
             if (sv.confirm_pending && selected) {
-                font_puts(top_fb, font_scale_col(22), row,
-                          "[discard? A=yes B=no]",
+                const char *msg = (i == SV_ACTION_LOAD)
+                    ? "[discard? A=yes B=no]"
+                    : "[overwrite? A=yes B=no]";
+                font_puts(top_fb, font_scale_col(22), row, msg,
                           selected ? PAL_WHITE : PAL_DIM);
             }
         }
@@ -278,14 +326,29 @@ void sample_view_draw(u8 *top_fb, u8 *bot_fb)
                   PAL_DIM);
     }
 
+    /* Bottom screen — sample metadata. The Waveform Editor (when
+     * active) takes over both screens; that case is handled at the
+     * top of this function. */
     draw_bottom_sample(bot_fb, s);
 }
 
 void sample_view_input(u32 down, u32 held)
 {
+    /* Modal keyboard — forward and return until it closes. */
+    if (text_input_is_active()) {
+        text_input_input(down, held);
+        return;
+    }
+
+    /* LFE is now a proper room (SCREEN_LFE) navigated via SELECT+RIGHT
+     * from SCREEN_SAMPLE. No Y+A binding, no is_active delegation — the
+     * main loop routes to waveform_view_input directly when in SCREEN_LFE. */
+
     /* ---- Normal sample view mode ---- */
 
-    /* B+A: delete/clear the current sample (two-tap confirm). */
+    /* B+A: delete/clear the current sample (two-tap confirm).
+     * Without the confirm, a stray B+A frees PCM that an active
+     * playback/LFE draft may still be dereferencing. */
     if ((held & KEY_B) && (down & KEY_A)) {
         MT_Sample *s = &song.samples[sv.selected];
         if (!s->active) return;
@@ -316,6 +379,8 @@ void sample_view_input(u32 down, u32 held)
             s->vib_speed = 0;
             s->vib_rate = 0;
             memset(s->name, 0, sizeof(s->name));
+            if (playback_is_playing())
+                playback_rebuild_mas();
         }
         mt_mark_song_modified();
         return;
@@ -324,8 +389,11 @@ void sample_view_input(u32 down, u32 held)
     /* Any non-B+A input cancels a pending delete confirm. */
     if (sv.delete_confirm_pending && down) {
         sv.delete_confirm_pending = false;
+        /* Fall through — let the input still do its thing. */
     }
 
+    /* Repeat-aware d-pad: holding a direction navigates continuously
+     * after ui_repeat_delay frames, one step per ui_repeat_rate frames. */
     u32 rep = keysDownRepeat();
 
     if (rep & KEY_L) {
@@ -355,6 +423,7 @@ void sample_view_input(u32 down, u32 held)
     if ((down & KEY_A) && !(held & KEY_B)) {
         MT_Sample *s = &song.samples[sv.selected];
         if (sv.action_row == SV_ACTION_LOAD) {
+            /* LOAD: confirm if the slot has unsaved data. */
             if (s->active && !sv.confirm_pending) {
                 sv.confirm_pending = true;
             } else {
@@ -362,8 +431,16 @@ void sample_view_input(u32 down, u32 held)
                 sv_open_load_browser();
             }
         } else if (sv.action_row == SV_ACTION_SAVE) {
+            /* SAVE opens a folder picker (disk browser in SAVE mode).
+             * The overwrite-confirm step is handled by main.c's
+             * SCREEN_DISK branch after the user commits with START —
+             * so no in-row confirm here. */
             sv.confirm_pending = false;
             sv_open_save_browser();
+        } else if (sv.action_row == SV_ACTION_RENAME) {
+            sv.confirm_pending = false;
+            text_input_open(s->name, sizeof(s->name) - 1,
+                            "Rename Sample");
         }
         return;
     }
@@ -389,4 +466,9 @@ void sample_view_input(u32 down, u32 held)
             if ((u32)sv.scroll >= s->length) sv.scroll = s->length - 1;
         }
     }
+
+    /* The plain A key has no action in the read-only sample view.
+     * SELECT+RIGHT navigates to the Waveform Editor (SCREEN_LFE). */
+
+    /* (B no longer navigates — use SELECT+LEFT to return to instrument) */
 }
