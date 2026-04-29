@@ -5,6 +5,7 @@
 #include "editor_state.h"
 #include "navigation.h"
 #include "pattern_view.h"
+#include "song_view.h"
 #include "disk_view.h"
 
 bool song_modified  = false;
@@ -55,6 +56,12 @@ int main(void)
                 pattern_view_draw(top_fb);
                 pattern_view_draw_bottom(bot_fb);
             }
+            break;
+        case SCREEN_SONG:
+            if (!navigation_handle_shift(kd, kh))
+                song_view_input(kd, kh);
+            if (current_screen == SCREEN_SONG)
+                song_view_draw(top_fb, bot_fb);
             break;
         case SCREEN_DISK:
             disk_view_input(kd, kh);
