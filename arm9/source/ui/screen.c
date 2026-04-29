@@ -1,4 +1,5 @@
 #include "screen.h"
+#include "font.h"
 #include <string.h>
 
 static u8 top_shadow[256 * 192] __attribute__((aligned(32)));
@@ -71,8 +72,9 @@ void screen_init(void)
     setup_palette(BG_PALETTE);
     setup_palette(BG_PALETTE_SUB);
 
-    memset(top_shadow, PAL_BG, sizeof(top_shadow));
-    memset(bot_shadow, PAL_BG, sizeof(bot_shadow));
+    font_init();
+    font_clear(top_fb, PAL_BG);
+    font_clear(bot_fb, PAL_BG);
 
     dmaFillWords(0, top_vram, 256 * 192);
     dmaFillWords(0, bot_vram, 256 * 192);
@@ -84,7 +86,7 @@ void screen_set_mode(ScreenMode mode)
 {
     if (mode >= SCREEN_COUNT) return;
     current_screen = mode;
-    memset(bot_shadow, PAL_BG, sizeof(bot_shadow));
+    font_clear(bot_fb, PAL_BG);
 }
 
 void screen_flush(void)
