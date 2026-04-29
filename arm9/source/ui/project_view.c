@@ -58,6 +58,7 @@ typedef enum {
     X(REPEAT_POS,       "Repeat Position",   PK_EDIT)        \
     X(FOLLOW_MODE,      "Follow Mode",       PK_EDIT)        \
     X(FONT_SIZE,        "Font Size",         PK_EDIT)        \
+    X(FONT_FACE,        "Font",              PK_EDIT)        \
     X(DEBUG_OVERLAY,    "Debug Overlay",     PK_EDIT)        \
     X(KEY_REPEAT_DELAY, "Key Repeat Delay",  PK_EDIT)        \
     X(KEY_REPEAT_RATE,  "Key Repeat Rate",   PK_EDIT)        \
@@ -322,6 +323,16 @@ static void adjust_value(ProjRow row, int delta)
                       ? FONT_MODE_SMALL : FONT_MODE_BIG);
         pattern_view_invalidate_bottom();
         break;
+    case PROW_FONT_FACE: {
+        FontMode fm = font_get_mode();
+        int cur = font_get_face(fm);
+        int count = font_face_count(fm);
+        cur += delta;
+        if (cur < 0) cur = count - 1;
+        if (cur >= count) cur = 0;
+        font_set_face(fm, cur);
+        break;
+    }
     case PROW_DEBUG_OVERLAY:
         break;  /* debug_view not wired yet */
     case PROW_KEY_REPEAT_DELAY: {
@@ -439,6 +450,12 @@ static void draw_top(u8 *fb)
         case PROW_FONT_SIZE:
             snprintf(vbuf, sizeof(vbuf), "%s",
                      font_get_mode() == FONT_MODE_BIG ? "BIG" : "SMALL");
+            val_color = PAL_NOTE;
+            break;
+        case PROW_FONT_FACE:
+            snprintf(vbuf, sizeof(vbuf), "%s",
+                     font_face_name(font_get_mode(),
+                                    font_get_face(font_get_mode())));
             val_color = PAL_NOTE;
             break;
         case PROW_DEBUG_OVERLAY:

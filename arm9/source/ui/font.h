@@ -19,6 +19,11 @@ void font_init(void);
 void font_set_mode(FontMode mode);
 FontMode font_get_mode(void);
 
+int font_face_count(FontMode mode);
+const char *font_face_name(FontMode mode, int index);
+void font_set_face(FontMode mode, int index);
+int font_get_face(FontMode mode);
+
 void font_putc(u8 *fb, int col, int row, char ch, u8 color);
 int font_puts(u8 *fb, int col, int row, const char *str, u8 color);
 void font_puts_colored(u8 *fb, int col, int row,
