@@ -285,16 +285,8 @@ void filebrowser_draw(FileBrowser *fb, u8 *framebuf)
              has_ext(fb->entries[idx], ".wav") ||
              has_ext(fb->entries[idx], ".raw"))) {
             u32 sz = fb->entry_size[idx];
-            if (sz < 1024) {
-                font_printf(framebuf, FONT_COLS - 10, row, PAL_DIM,
-                            "%4luB", (unsigned long)sz);
-            } else if (sz < 1024 * 1024) {
-                font_printf(framebuf, FONT_COLS - 10, row, PAL_DIM,
-                            "%4luK", (unsigned long)(sz / 1024));
-            } else {
-                font_printf(framebuf, FONT_COLS - 10, row, PAL_DIM,
-                            "%4luM", (unsigned long)(sz / (1024 * 1024)));
-            }
+            font_printf(framebuf, FONT_COLS - 10, row, PAL_DIM,
+                        "%4luK", (unsigned long)((sz + 512) / 1024));
         }
     }
 

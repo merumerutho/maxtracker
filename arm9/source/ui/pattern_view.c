@@ -34,10 +34,8 @@ void start_pattern_loop(void);
 /* The global cursor lives in editor_state.c. */
 
 #define DATA_ROW_START  2
-/* Data rows span from DATA_ROW_START to footer row (SMALL 30).
- * Use font_scale_row(30) so BIG mode (rows 22/23 for footer/transport)
- * shrinks the data window correctly. Accessed via data_row_count(). */
-static inline int data_row_count(void) { return font_scale_row(30) - DATA_ROW_START; }
+/* Data rows span from DATA_ROW_START to the footer row (FONT_ROWS - 2). */
+static inline int data_row_count(void) { return (FONT_ROWS - 2) - DATA_ROW_START; }
 
 /* Resize confirmation state: when the user shrinks a pattern via X+L,
  * we set a target and wait for a second X+L press to confirm. */
@@ -344,7 +342,7 @@ void pattern_view_draw_status(u8 *fb)
 
 void pattern_view_draw_transport(u8 *fb)
 {
-    int trow = font_scale_row(31);
+    int trow = FONT_ROWS - 1;
     font_fill_row(fb, trow, 0, FONT_COLS, PAL_HEADER_BG);
 
     u8 pi = (cursor.order_pos < song.order_count)
@@ -459,8 +457,7 @@ void pattern_view_draw(u8 *fb)
                              is_cursor, is_play);
     }
 
-    /* Footer (SMALL row 30) */
-    int footer_row = font_scale_row(30);
+    int footer_row = FONT_ROWS - 2;
     font_fill_row(fb, footer_row, 0, FONT_COLS, PAL_BG);
     char note_str[4];
     u8 preview_note = cursor.octave * 12 + cursor.semitone;
@@ -586,13 +583,13 @@ void pattern_view_draw_bottom(u8 *fb)
             font_puts(fb, col, state_row, "ON", PAL_PLAY);
     }
 
-    int ram_row   = font_scale_row(28);
-    int play_row  = ram_row - 1;   /* sit directly above the RAM line */
-    int hint_row1 = play_row - 1;  /* FX description line 1             */
-    int hint_row0 = play_row - 2;  /* FX header (letter + name)          */
-    int bar_row  = font_scale_row(29);
-    int foot_row = font_scale_row(30);
-    int tport_row = font_scale_row(31);
+    int tport_row = FONT_ROWS - 1;
+    int foot_row  = FONT_ROWS - 2;
+    int bar_row   = FONT_ROWS - 3;
+    int ram_row   = FONT_ROWS - 4;
+    int play_row  = FONT_ROWS - 5;
+    int hint_row1 = FONT_ROWS - 6;
+    int hint_row0 = FONT_ROWS - 7;
 
     /* Three-row FX hint block when not playing:
      *   hint_row0: "<letter> <name>"                 (header, colored)
