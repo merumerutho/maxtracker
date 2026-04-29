@@ -15,8 +15,8 @@ include $(DEVKITARM)/ds_rules
 MAXMOD      := $(CURDIR)/../lib
 
 BUILD		:=	build
-SOURCES		:=	source/core source/ui source/io
-INCLUDES	:=	source/core source/ui source/io ../include
+SOURCES		:=	source/core source/ui source/ui/lfe source/ui/lfe/gen source/ui/lfe/fx source/io
+INCLUDES	:=	source/core source/ui source/ui/lfe source/ui/lfe/gen source/ui/lfe/fx source/io ../include
 DATA		:=
 
 # ----- LFE integration -----
