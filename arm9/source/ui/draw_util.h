@@ -25,6 +25,22 @@ static inline void plot_pixel(u8 *fb, int x, int y, u8 color)
     *hw = val;
 }
 
+/* Read the touchscreen and return pixel coordinates in [0..255] × [0..191].
+ *
+ * Why not use touch.px / touch.py: libnds's pre-calibrated pixel fields
+ * require firmware user-settings data to be loaded (readUserSettings),
+ * which doesn't happen under no$gba and apparently not reliably under
+ * libnds + current devkitPro init either. The raw ADC values come through
+ * IPC fine, so we do the raw→pixel mapping ourselves with fixed linear
+ * constants. Same approach as the MAXMXDS reference project (see its
+ * arm9/source/ui/screens.h for X_MIN / X_MAX / Y_MIN / Y_MAX), and it
+ * works on both hardware and emulator from a single code path.
+ *
+ * Constants are in raw ADC units (12-bit), calibrated empirically on
+ * both no$gba and real hardware in MAXMXDS. Integer math only — ARM9
+ * has no FPU. Result is clamped so callers never see out-of-bounds
+ * coordinates from edge noise or off-screen taps.
+ */
 #define MT_TOUCH_RAW_X_MIN  320
 #define MT_TOUCH_RAW_X_MAX  3808
 #define MT_TOUCH_RAW_Y_MIN  224
@@ -49,6 +65,17 @@ static inline void touch_read_pixel(int *out_px, int *out_py)
     *out_py = py;
 }
 
+/* Horizontal fader bar drawn directly into an 8bpp shadow framebuffer.
+ * Pixel-level resolution — not grid-snapped to font cells.
+ *
+ *   fb         — 256×192 shadow buffer (plain RAM, not VRAM)
+ *   px_x, px_y — top-left pixel of the bar
+ *   px_w, px_h — bar dimensions in pixels
+ *   val        — current value in [0, val_max]
+ *   val_max    — full-scale value (fill = val/val_max)
+ *   fill_color — palette index for the filled portion
+ *   track_color— palette index for the unfilled track
+ */
 static inline void ui_draw_fader(u8 *fb,
                                  int px_x, int px_y,
                                  int px_w, int px_h,

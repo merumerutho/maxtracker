@@ -1,6 +1,8 @@
 /*
  * wav_save.c — Minimal RIFF/WAV writer (16-bit signed mono).
  *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
  * Writes a complete RIFF/WAVE file in one pass: 44-byte header
  * followed by the raw PCM data. No chunked writes, no buffering
  * beyond what the FAT driver provides. The entire file fits in a
