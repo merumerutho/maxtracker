@@ -11,8 +11,8 @@ include $(DEVKITARM)/ds_rules
 MAXMOD      := $(CURDIR)/../lib
 
 BUILD		:=	build
-SOURCES		:=	source/core source/ui
-INCLUDES	:=	source/core source/ui ../include
+SOURCES		:=	source/core source/ui source/io
+INCLUDES	:=	source/core source/ui source/io ../include
 DATA		:=
 
 ARCH	:=	-mthumb -mthumb-interwork
