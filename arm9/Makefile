@@ -2,6 +2,10 @@
 .SUFFIXES:
 #---------------------------------------------------------------------------------
 
+# Capture this Makefile's own location BEFORE any `include` directives
+# pollute MAKEFILE_LIST.
+LFE_THIS_MAKEFILE := $(abspath $(lastword $(MAKEFILE_LIST)))
+
 ifeq ($(strip $(DEVKITARM)),)
 $(error "Please set DEVKITARM in your environment. export DEVKITARM=<path to>devkitARM")
 endif
@@ -15,6 +19,20 @@ SOURCES		:=	source/core source/ui source/io
 INCLUDES	:=	source/core source/ui source/io ../include
 DATA		:=
 
+# ----- LFE integration -----
+# LFE_ENABLED is passed in by the top-level Makefile. When set to 1 we
+# add the lib/lfe include path, define MAXTRACKER_LFE, and link liblfe.a.
+LFE_ENABLED ?= 0
+LFE_DIR     := $(abspath $(dir $(LFE_THIS_MAKEFILE))../lib/lfe)
+
+ifeq ($(LFE_ENABLED),1)
+  LFE_CFLAGS  := -DMAXTRACKER_LFE -I$(LFE_DIR)/include
+  LFE_LDFLAGS := -L$(LFE_DIR)/build_nds -llfe
+else
+  LFE_CFLAGS  :=
+  LFE_LDFLAGS :=
+endif
+
 ARCH	:=	-mthumb -mthumb-interwork
 
 CFLAGS	:=	-g -Wall -O2\
@@ -22,14 +40,14 @@ CFLAGS	:=	-g -Wall -O2\
 			-ffast-math \
 			$(ARCH)
 
-CFLAGS	+=	$(INCLUDE) -DARM9 $(EXTRA_CFLAGS)
+CFLAGS	+=	$(INCLUDE) -DARM9 $(EXTRA_CFLAGS) $(LFE_CFLAGS)
 CXXFLAGS	:=	$(CFLAGS) -fno-rtti -fno-exceptions
 
 ASFLAGS	:=	-g $(ARCH) -march=armv5te -mtune=arm946e-s
 
 LDFLAGS	=	-specs=ds_arm9.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
-LIBS	:=	-lfilesystem -lfat -lnds9 -lmm9 -lm
+LIBS	:=	$(LFE_LDFLAGS) -lfilesystem -lfat -lnds9 -lmm9 -lm
 
 LIBDIRS	:=	$(MAXMOD) $(LIBNDS)
 MAXMOD_INC	:=	$(MAXMOD)/maxmod/include
