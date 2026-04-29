@@ -5,3 +5,4 @@ reference/
 build/
 *_build_*/
 release/
+data/
