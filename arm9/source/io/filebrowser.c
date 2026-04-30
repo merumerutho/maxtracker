@@ -329,18 +329,19 @@ bool filebrowser_input(FileBrowser *fb, u32 down)
      * scroll_view_follow, using fb->sv.margin == 0 for edge-follow
      * (cursor lands at the top or bottom of the visible window when
      * it crosses the edge). */
-    if (down & KEY_UP) {
+    u32 rep = keysDownRepeat();
+    if (rep & KEY_UP) {
         if (fb->cursor > 0) fb->cursor--;
     }
-    if (down & KEY_DOWN) {
+    if (rep & KEY_DOWN) {
         if (fb->cursor < fb->entry_count - 1) fb->cursor++;
     }
-    if (down & KEY_LEFT) {
+    if (rep & KEY_LEFT) {
         /* Page up */
         fb->cursor -= FB_VISIBLE_ROWS;
         if (fb->cursor < 0) fb->cursor = 0;
     }
-    if (down & KEY_RIGHT) {
+    if (rep & KEY_RIGHT) {
         /* Page down */
         fb->cursor += FB_VISIBLE_ROWS;
         if (fb->cursor >= fb->entry_count)
