@@ -372,7 +372,7 @@ A few things that aren't enforced by the build system but are project policy:
 
 **Don't commit generated files.** The `release/` directory, the `arm9/build/` and `arm7/build/` directories, and any `.o` / `.elf` / `.nds` outputs are generated. The maxmod build artifacts under `lib/maxmod/` are also generated. None of them go into the repository.
 
-**Don't commit emulator save states or test outputs.** If your debugging produces a melonDS save state or a captured tick log, leave it on your machine. They're large, they're personal, and they go stale immediately.
+**Don't commit emulator save states or test outputs.** If your debugging produces a save state or a captured tick log, leave it on your machine. They're large, they're personal, and they go stale immediately.
 
 **The user handles the actual build commands.** Don't run `make` from agent code unless explicitly asked. The user is at the keyboard and will run the build when they're ready. (This is a project preference recorded in the repository's auto-memory and applies specifically to AI-assisted development.)
 

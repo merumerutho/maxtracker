@@ -6,7 +6,7 @@ Parent: [DESIGN.md](../DESIGN.md)
 
 ## 0. What this document is
 
-A reference for the gotchas that come from running on real Nintendo DS hardware. None of these are obvious from reading C source, and most of them either don't reproduce in melonDS or only fail intermittently. They are the kind of bug you can spend an afternoon chasing before realizing the answer is "the bus doesn't work the way you assumed."
+A reference for the gotchas that come from running on real Nintendo DS hardware. None of these are obvious from reading C source, and most of them either don't reproduce in emulators or only fail intermittently. They are the kind of bug you can spend an afternoon chasing before realizing the answer is "the bus doesn't work the way you assumed."
 
 Each entry has the same shape:
 
@@ -37,11 +37,11 @@ This is a property of every NDS framebuffer, every background tile map, every OA
 
 **Rule:** Call `fatInitDefault()` before `mmInit()`. The order matters.
 
-**Why:** Both libfat and maxmod use the FIFO and DMA subsystems. Libfat's initialization needs to claim certain hardware resources and set up its IRQ handlers. If maxmod gets there first, the FIFO state is already in a configuration that prevents libfat's SD driver from talking to the cartridge slot. The result is that `fatInitDefault()` returns false on real hardware (works fine in melonDS, which doesn't simulate the resource conflict), and the user can't load or save files.
+**Why:** Both libfat and maxmod use the FIFO and DMA subsystems. Libfat's initialization needs to claim certain hardware resources and set up its IRQ handlers. If maxmod gets there first, the FIFO state is already in a configuration that prevents libfat's SD driver from talking to the cartridge slot. The result is that `fatInitDefault()` returns false on real hardware, and the user can't load or save files.
 
 This rule is specific to the patched maxmod build that maxtracker uses. Stock maxmod might tolerate the wrong order; we have not tested it.
 
-**How to detect violation:** On real hardware (flashcart), file loading fails immediately at startup. The disk screen shows an empty file list. Autosave reports errors. In melonDS everything works.
+**How to detect violation:** On real hardware (flashcart), file loading fails immediately at startup. The disk screen shows an empty file list. Autosave reports errors.
 
 **Where it shows up:** `arm9/source/core/main.c` `main()` does `fatInitDefault()` and then `mmInit()`. Don't reorder them. If you ever add a third subsystem that touches FIFO at init, add it after `mmInit()` unless you've verified it doesn't conflict.
 
@@ -89,7 +89,7 @@ If you add another callback installation in the future, do it in the same place.
 
 The fix was to put the entire pattern table directly into `MT_SharedPatternState`. ARM9 populates it once at playback start (an array of `MT_PatternEntry { cells, nrows }` indexed by pattern index, plus the order table). ARM7 then walks it itself when the order position changes, so no FIFO is needed for the transition. ARM7 still sends `MT_CMD_PATTERN_END` for ARM9's display update, but the actual cells lookup has already happened locally.
 
-**How to detect violation:** Playback at a pattern boundary is glitchy: notes from the wrong pattern, audible clicks, or a brief silence. Reproduces on real hardware but is much less obvious in melonDS because the FIFO latency there is artificially low.
+**How to detect violation:** Playback at a pattern boundary is glitchy: notes from the wrong pattern, audible clicks, or a brief silence. Reproduces on real hardware; may be less obvious in emulators because FIFO latency is artificially low.
 
 **Where it shows up:** The `patterns[]` and `orders[]` arrays in `MT_SharedPatternState` (`include/mt_shared.h`) exist for this reason. ARM7's tick callback in `arm7/source/main.c` indexes them when `pos != last_reported_pos`. If you ever consider "simplifying" this by removing the shared tables and going back to FIFO-driven transitions, don't.
 
@@ -231,7 +231,7 @@ This is not an architectural choice; it's a behavior of stock maxmod's `mmReadPa
 
 The maxtracker convention is: `fs_browse_root` is set to `"./data/"` when running from a flashcart and `"./"` when running from a NitroFS-embedded build. All file operations should use paths relative to one of those roots.
 
-**How to detect violation:** File loading works in melonDS but fails on real hardware, or vice versa. Specific paths mysteriously fail with ENOENT despite the file being there.
+**How to detect violation:** File loading works in the emulator but fails on real hardware, or vice versa. Specific paths mysteriously fail with ENOENT despite the file being there.
 
 **Where it shows up:** `arm9/source/core/main.c` `main()` sets `fs_browse_root` after `fatInitDefault()` succeeds. The disk screen and autosave both use this root. If you add a new file path, derive it from the root, don't hardcode `fat:/...`.
 
@@ -251,20 +251,20 @@ The fix is the lifecycle hook system described in [architecture.md § 9](archite
 
 ---
 
-## 14. melonDS is more forgiving than real hardware
+## 14. Emulators are more forgiving than real hardware
 
-**Rule:** A feature that works in melonDS isn't proven to work on hardware. Test on a real DS or flashcart before declaring something fixed.
+**Rule:** A feature that works in no$gba isn't proven to work on hardware. Test on a real DS or flashcart before declaring something fixed. no$gba is the only supported emulator.
 
-**Why:** melonDS simulates the NDS faithfully enough for most things, but it diverges from hardware in a few areas that maxtracker repeatedly stumbles into:
+**Why:** no$gba is the closest emulator to real hardware, but it still diverges in a few areas that maxtracker repeatedly stumbles into:
 
-- **Cache coherency** is more lenient. melonDS often shows ARM7's writes to ARM9 even when ARM9 is reading through the cached pointer. Real hardware does not.
-- **FIFO timing** is artificially fast. Round-trips that take many milliseconds on hardware happen in microseconds in melonDS, which can hide races.
-- **VRAM 8-bit writes** sometimes appear to work in melonDS depending on the version. They never work on hardware.
-- **libfat / SD initialization** order matters less in melonDS because melonDS implements the SD interface in software with no resource conflicts.
+- **Cache coherency** can be more lenient. The emulator may show ARM7's writes to ARM9 even when ARM9 is reading through the cached pointer. Real hardware does not.
+- **FIFO timing** is artificially fast. Round-trips that take many milliseconds on hardware happen in microseconds in the emulator, which can hide races.
+- **VRAM 8-bit writes** never work on hardware.
+- **libfat / SD initialization** order may matter less in emulators than on real hardware.
 
 **How to detect violation:** Anything in this document. The general pattern is: works fine in the emulator, glitches on hardware, you waste an afternoon, eventually realize the bug was always there.
 
-**Where it shows up:** Everywhere. Any change to `playback.c`, `arm7/source/main.c`, `mt_shared.h`, the sample writer, or the file I/O paths should be tested on real hardware (or at least on no$gba, which is closer to hardware in some respects) before being considered done.
+**Where it shows up:** Everywhere. Any change to `playback.c`, `arm7/source/main.c`, `mt_shared.h`, the sample writer, or the file I/O paths should be tested on real hardware before being considered done.
 
 ---
 
@@ -294,7 +294,7 @@ These are not part of the maxtracker repository. They live on the developer mach
 
 ## 17. When in doubt: print, capture, compare
 
-There is no symbolic debugger for the running NDS. You can run melonDS with GDB stubs, but it has the cache-coherency problem described above, so even GDB lies to you about ARM7 state.
+There is no symbolic debugger for the running NDS. no$gba has a built-in debugger, but it still has limits around cache coherency, so treat its ARM7 state views as approximate.
 
 The maxtracker debugging convention is:
 

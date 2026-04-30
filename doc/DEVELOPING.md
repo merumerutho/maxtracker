@@ -27,8 +27,8 @@ You will need:
 - **devkitPro / devkitARM** for cross-compiling to the NDS. Install via the standard devkitPro installer for your platform. Set the `DEVKITARM` environment variable to point at it (the project's top-level Makefile will refuse to build without this).
 - **GNU Make**. Comes with devkitPro on Windows; preinstalled on Linux/macOS.
 - **A host C compiler (`gcc`)** for the host-native test suite. On Windows the project has been built against MSYS2 mingw64 `gcc`; any reasonably current `gcc` or `clang` should work. The host tests do not need devkitARM.
-- **An NDS emulator** for quick iteration. melonDS is the default; no$gba is also useful because it's closer to real hardware in some areas (see [hardware_quirks.md § 14](hardware_quirks.md)).
-- **A real DS or flashcart** for hardware verification. melonDS is more forgiving than real hardware; anything that touches audio, FIFO, or the SD card path needs to be tested on hardware before being declared done.
+- **no$gba** for emulated testing. This is the only supported emulator; it is the closest to real hardware behavior. See [hardware_quirks.md § 14](hardware_quirks.md).
+- **A real DS or flashcart** for hardware verification. Even no$gba is more forgiving than real hardware in some areas; anything that touches audio, FIFO, or the SD card path needs to be tested on hardware before being declared done.
 
 You do not need:
 
@@ -51,7 +51,7 @@ make clean      - remove all build artifacts
 
 In practice you'll use three of these:
 
-**`make emulator`** for day-to-day development. Produces `release/maxtracker.nds` with the contents of `data/` embedded via NitroFS. Drop it into melonDS and you're running. The data files (sample songs, default sounds) are baked into the ROM, so file loading works without an emulated SD card.
+**`make emulator`** for day-to-day development. Produces `release/maxtracker.nds` with the contents of `data/` embedded via NitroFS. Load it in no$gba and you're running. The data files (sample songs, default sounds) are baked into the ROM, so file loading works without an emulated SD card.
 
 **`make native`** for testing on hardware. Produces `release/maxtracker.nds` *without* embedded data. Copy it to your flashcart along with a `data/` directory containing whatever sample songs you want. The build is otherwise identical to `emulator`.
 
@@ -68,11 +68,11 @@ A few build details that aren't obvious:
 
 ## 4. Running
 
-### In melonDS
+### In no$gba
 
-Drop `release/maxtracker.nds` into melonDS and run it. The first screen is the pattern editor. Pull up the controls reference (`doc/ui_ux.md` or just experiment) for navigation. The bottom screen shows context-sensitive hints.
+Load `release/maxtracker.nds` in no$gba. The first screen is the pattern editor. Pull up the controls reference (`doc/ui_ux.md` or just experiment) for navigation. The bottom screen shows context-sensitive hints.
 
-melonDS is fast enough that you'll see more or less real-world frame rates. Audio works. SD card emulation is on by default and works for most operations. **What melonDS will not catch** is documented in [hardware_quirks.md § 14](hardware_quirks.md). Short version: cache-coherency bugs, FIFO timing races, VRAM 8-bit write violations, and libfat init order issues all reproduce on hardware but not in melonDS.
+no$gba is the closest emulator to real hardware and the only one currently supported. It catches most cache-coherency and FIFO timing issues that other emulators miss. **What no$gba will not catch** is documented in [hardware_quirks.md § 14](hardware_quirks.md).
 
 ### On hardware
 
@@ -87,9 +87,6 @@ Hardware testing is mandatory after any change in the following areas:
 
 If your change is purely in the song model, clipboard, undo, or scale modules, host tests are sufficient.
 
-### In no$gba
-
-Same as melonDS but with stricter hardware emulation. If a feature works in melonDS and breaks in no$gba, the bug is real and probably also breaks on hardware. Use no$gba as a second-line check before going to a flashcart.
 
 ---
 
@@ -246,7 +243,7 @@ See `pv_open_load_browser` in `project_view.c` and `sv_open_load_browser` in `sa
    fifoSendValue32(FIFO_MT, MT_MKCMD(MT_CMD_YOUR_THING, your_param));
    ```
 5. If your command needs to pass a pointer (more than 24 bits of parameter), use the two-step pattern: send a value command marking the address type, then send the address with `fifoSendAddress`. See `MT_CMD_SET_SHARED` and `MT_CMD_SET_MAS` for the existing convention.
-6. Test on hardware as well as in melonDS. FIFO bugs often don't reproduce in the emulator.
+6. Test on hardware as well as in no$gba. FIFO bugs may not reproduce even in no$gba.
 
 ### Adding a new shared state field
 
@@ -299,15 +296,12 @@ There is no symbolic debugger that handles the cross-CPU NDS architecture well. 
 
 **`playback_cmp` and `mas_diff`** -- For audio engine and serialization bugs, these tools tell you exactly which tick or byte diverges, which is much faster than guessing.
 
-**melonDS GDB stub** -- melonDS has a GDB integration. It works for ARM9-only bugs but is unreliable for cross-CPU code because melonDS's memory model is more lenient than hardware. Useful for "the editor crashed in this function" but not for "the audio glitches sometimes".
-
-**no$gba** -- The closest emulator to real hardware. If a bug only reproduces on hardware and you're trying to chase it without going to a flashcart every iteration, no$gba is your best bet.
+**no$gba debugger** -- no$gba has a built-in debugger with breakpoints, memory inspection, and I/O register views. It is the closest emulator to real hardware and the only one currently supported. Use it as the first line of defense before going to a flashcart.
 
 The general debugging workflow for a hardware-only bug is:
 
-1. Reproduce in melonDS first to make sure you have a clean repro (most bugs reproduce in both).
-2. If it doesn't reproduce in melonDS, check no$gba.
-3. If it still doesn't reproduce, you're in real-hardware-only territory. Add a logging field to shared state, instrument the suspected code path, capture the symptom on hardware, read the log on the next melonDS run.
+1. Reproduce in no$gba first to make sure you have a clean repro (most bugs reproduce there).
+2. If it doesn't reproduce in no$gba, you're in real-hardware-only territory. Add a logging field to shared state, instrument the suspected code path, capture the symptom on hardware, read the log on the next no$gba run.
 4. Form a hypothesis. Check the hypothesis against [hardware_quirks.md](hardware_quirks.md); most cross-CPU bugs are one of those rules being violated.
 5. Fix it, rebuild *both* CPUs from clean, retest on hardware.
 

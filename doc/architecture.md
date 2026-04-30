@@ -181,7 +181,7 @@ It is not a free choice. Three rules follow from it that contributors must respe
 
 **Views must not modify the model from inside `_draw`.** The draw function should be a pure function of state to pixels. If you find yourself wanting to change `song` or `cursor` from within a draw function, that means the work belongs in the input handler. The reason isn't aesthetic: drawing and input run in the same frame, but a draw-time mutation will not be visible until the *next* frame's draw, which produces a one-frame visual lag that's hard to debug.
 
-**Drawing must be fast enough to fit in a frame budget.** At ~60 Hz that's about 16 ms per frame, minus whatever ARM7 needs. For text-mode views with a few hundred glyphs the budget is generous, but if you ever add a heavy effect (waveform rendering, scope) make sure it can complete in time on real hardware, not just in melonDS. Rendering that misses VBlank causes visible tearing and unpredictable input lag.
+**Drawing must be fast enough to fit in a frame budget.** At ~60 Hz that's about 16 ms per frame, minus whatever ARM7 needs. For text-mode views with a few hundred glyphs the budget is generous, but if you ever add a heavy effect (waveform rendering, scope) make sure it can complete in time on real hardware, not just in no$gba. Rendering that misses VBlank causes visible tearing and unpredictable input lag.
 
 ---
 
@@ -251,7 +251,7 @@ The maxmod tick callback (`mt_EventCallback` on ARM7) also runs in tick context,
 
 ### Debugging IPC
 
-Bugs in this layer often don't reproduce in melonDS because melonDS is more forgiving about cache coherency than real hardware. If a feature works in the emulator but glitches on a flashcart, suspect an IPC issue first. The host test suite doesn't exercise the IPC path at all; it links a host stub for `playback.h` and runs everything single-CPU.
+Bugs in this layer may not reproduce in emulators because even no$gba is more forgiving about cache coherency than real hardware. If a feature works in the emulator but glitches on a flashcart, suspect an IPC issue first. The host test suite doesn't exercise the IPC path at all; it links a host stub for `playback.h` and runs everything single-CPU.
 
 ---
 
@@ -346,7 +346,7 @@ this when adding the next consumer.
 
 These are the rules that aren't enforced by the compiler but will bite you eventually if you violate them.
 
-**Do not write to shared state from ARM9 without flushing.** `DC_FlushRange((void *)&shared_state, sizeof(shared_state))` after every modification. If you forget, ARM7 will see stale data and you will get audible glitches that don't reproduce in melonDS.
+**Do not write to shared state from ARM9 without flushing.** `DC_FlushRange((void *)&shared_state, sizeof(shared_state))` after every modification. If you forget, ARM7 will see stale data and you will get audible glitches that may not reproduce in no$gba.
 
 **Do not read shared state from ARM9 through the cached pointer.** Use `get_uncached_shared()` or read the field through `(volatile u32 *)((u32)&shared_state.field | 0x00400000)`. The cache will lie to you.
 
