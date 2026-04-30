@@ -77,24 +77,29 @@ static mm_word mt_EventCallback(mm_word msg, mm_word param)
 
         /* Update shared state in a single 32-bit store so ARM9 can never
          * read a torn (tick,row,position) combination during the callback. */
-        if (mt_shared)
+        if (mt_shared && mt_shared->playing)
         {
             mt_shared->pos_state = MT_POS_PACK(pos, row, tick);
         }
 
-        /* Detect pattern boundary: order position changed */
-        if (pos != last_reported_pos)
+        /* Only send FIFO messages when playing — during the transient
+         * window between mmPlayMAS and mmSetPositionEx, the player is at
+         * row 0 and sending that to ARM9 would snap the cursor. */
+        if (mt_shared && mt_shared->playing)
         {
-            /* Tell ARM9 to update shared_state.cells to the new pattern */
-            fifoSendValue32(FIFO_MT, MT_MKCMD(MT_CMD_PATTERN_END, (u32)pos));
-            last_reported_pos = pos;
-        }
+            /* Detect pattern boundary: order position changed */
+            if (pos != last_reported_pos)
+            {
+                fifoSendValue32(FIFO_MT, MT_MKCMD(MT_CMD_PATTERN_END, (u32)pos));
+                last_reported_pos = pos;
+            }
 
-        /* Send tick message to ARM9 on tick 0 of each row (reduce FIFO traffic) */
-        if (tick == 0)
-        {
-            u32 msg_val = MT_MKCMD(MT_CMD_TICK, (u32)pos | ((u32)row << 8));
-            fifoSendValue32(FIFO_MT, msg_val);
+            /* Send tick message to ARM9 on tick 0 of each row */
+            if (tick == 0)
+            {
+                u32 msg_val = MT_MKCMD(MT_CMD_TICK, (u32)pos | ((u32)row << 8));
+                fifoSendValue32(FIFO_MT, msg_val);
+            }
         }
     }
     else if (msg == MMCB_SONGFINISHED)
@@ -265,20 +270,6 @@ int main(void)
                 mt_shared->playing = 0;
         }
 
-        if (pending_mas_addr && !pending_play) {
-            /*
-             * MAS address received without explicit play — load and start.
-             * This handles the case where SET_MAS + PLAY are sent together;
-             * the MAS load happens first, PLAY happens next frame.
-             */
-            u32 addr = pending_mas_addr;
-            pending_mas_addr = 0;
-            mmStop();
-            mmPlayMAS(addr, MM_PLAY_LOOP, 0);
-            if (mt_shared)
-                mt_shared->playing = 1;
-        }
-
         if (pending_play) {
             pending_play = false;
             last_reported_pos = 0xFF;  /* reset so first tick triggers PATTERN_END */
@@ -287,6 +278,11 @@ int main(void)
              * resolves the cells pointer on the very first tick. */
             extern mm_byte mt_last_position;
             mt_last_position = 0xFF;
+
+            /* Clear playing flag so tick callbacks don't write stale
+             * row=0 to pos_state before mmSetPositionEx completes. */
+            if (mt_shared)
+                mt_shared->playing = 0;
 
             /* If there's a pending MAS address, load it first */
             if (pending_mas_addr) {

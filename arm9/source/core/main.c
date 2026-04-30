@@ -417,13 +417,20 @@ int main(int argc, char **argv)
         /* Update playback state from ARM7 each frame */
         playback_update();
         if (cursor.playing) {
-            cursor.play_row   = playback_get_row();
-            cursor.play_order = playback_get_order();
+            cursor.play_row = playback_get_row();
+
+            /* In pattern-loop modes the MAS has a single order entry,
+             * so ARM7 always reports pos=0.  Only update play_order
+             * from ARM7 during song playback; pattern-loop keeps the
+             * value set by start_pattern_loop(). */
+            if (play_mode == PLAY_SONG)
+                cursor.play_order = playback_get_order();
 
             /* Follow mode: cursor tracks playback position */
             if (cursor.follow) {
-                cursor.row       = cursor.play_row;
-                cursor.order_pos = cursor.play_order;
+                cursor.row = cursor.play_row;
+                if (play_mode == PLAY_SONG)
+                    cursor.order_pos = cursor.play_order;
             }
 
             /* Detect when ARM7 has stopped (song end) */
