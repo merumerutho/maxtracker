@@ -45,7 +45,7 @@ static const char *pv_save_path = "./data/song.mas";
 /* X-list — single source of truth for project rows.
  *
  * Columns: PROW(name, label, kind)
- *   kind ∈ { PK_EDIT, PK_RO, PK_SEP, PK_ACT, PK_ACT_CONFIRM }
+ *   kind ∈ { PK_RW, PK_RO, PK_SEP, PK_ACT, PK_ACT_CONFIRM }
  *
  * Order here is the on-screen order; the enum, label table, and
  * kind table are all generated below. Every attribute query
@@ -53,7 +53,7 @@ static const char *pv_save_path = "./data/song.mas";
  * a kind lookup rather than a hand-maintained whitelist.
  */
 typedef enum {
-    PK_EDIT = 0,        /* editable value */
+    PK_RW = 0,          /* editable value */
     PK_RO,              /* read-only counter */
     PK_SEP,             /* separator (NULL label, cursor skips) */
     PK_ACT,             /* action, A-press runs immediately */
@@ -61,17 +61,17 @@ typedef enum {
 } ProjKind;
 
 #define PROJ_ROWS(X) \
-    X(NAME,             "Song Name",         PK_EDIT)        \
-    X(TEMPO,            "Tempo (BPM)",       PK_EDIT)        \
-    X(SPEED,            "Speed (ticks/row)", PK_EDIT)        \
-    X(MASTER_VOL,       "Master Volume",     PK_EDIT)        \
-    X(CHANNELS,         "Channels",          PK_EDIT)        \
-    X(REPEAT_POS,       "Repeat Position",   PK_EDIT)        \
-    X(FOLLOW_MODE,      "Follow Mode",       PK_EDIT)        \
-    X(FONT,             "Font",              PK_EDIT)        \
-    X(DEBUG_OVERLAY,    "Debug Overlay",     PK_EDIT)        \
-    X(KEY_REPEAT_DELAY, "Key Repeat Delay",  PK_EDIT)        \
-    X(KEY_REPEAT_RATE,  "Key Repeat Rate",   PK_EDIT)        \
+    X(NAME,             "Song Name",         PK_RW)        \
+    X(TEMPO,            "Tempo (BPM)",       PK_RW)        \
+    X(SPEED,            "Speed (ticks/row)", PK_RO)          \
+    X(MASTER_VOL,       "Master Volume",     PK_RW)        \
+    X(CHANNELS,         "Channels",          PK_RO)          \
+    X(REPEAT_POS,       "Repeat Position",   PK_RW)        \
+    X(FOLLOW_MODE,      "Follow Mode",       PK_RW)        \
+    X(FONT,             "Font",              PK_RW)        \
+    X(DEBUG_OVERLAY,    "Debug Overlay",     PK_RW)        \
+    X(KEY_REPEAT_DELAY, "Key Repeat Delay",  PK_RW)        \
+    X(KEY_REPEAT_RATE,  "Key Repeat Rate",   PK_RW)        \
     X(SEP1,             NULL,                PK_SEP)         \
     X(INST_COUNT,       "Instruments",       PK_RO)          \
     X(SAMP_COUNT,       "Samples",           PK_RO)          \
@@ -103,9 +103,6 @@ static const u8 row_kinds[PROW_COUNT] = {
 #undef X
 };
 
-/* Valid channel count values for cycling */
-static const u8 chan_values[] = { 4, 8, 16, 24, 32 };
-#define CHAN_VALUE_COUNT 5
 
 /* ------------------------------------------------------------------ */
 /* Editor state                                                        */
@@ -204,15 +201,6 @@ static void pv_open_load_browser(void)
     screen_set_mode(SCREEN_DISK);
     font_clear(top_fb, PAL_BG);
     font_clear(bot_fb, PAL_BG);
-}
-
-/* Find the next channel value index for the current channel_count */
-static int chan_index(u8 val)
-{
-    for (int i = 0; i < CHAN_VALUE_COUNT; i++) {
-        if (chan_values[i] == val) return i;
-    }
-    return 0; /* default to first if not found */
 }
 
 /* Move cursor, skipping separators */
@@ -353,27 +341,11 @@ static void adjust_value(ProjRow row, int delta)
         song.initial_tempo = (u8)v;
         break;
     }
-    case PROW_SPEED: {
-        int v = (int)song.initial_speed + delta;
-        if (v < 1) v = 1;
-        if (v > 31) v = 31;
-        song.initial_speed = (u8)v;
-        break;
-    }
     case PROW_MASTER_VOL: {
         int v = (int)song.global_volume + delta;
         if (v < 0) v = 0;
         if (v > 128) v = 128;
         song.global_volume = (u8)v;
-        break;
-    }
-    case PROW_CHANNELS: {
-        int idx = chan_index(song.channel_count);
-        if (delta > 0) idx++;
-        else if (delta < 0) idx--;
-        if (idx < 0) idx = 0;
-        if (idx >= CHAN_VALUE_COUNT) idx = CHAN_VALUE_COUNT - 1;
-        song.channel_count = chan_values[idx];
         break;
     }
     case PROW_REPEAT_POS: {
@@ -510,12 +482,14 @@ static void draw_top(u8 *fb)
             break;
         case PROW_SPEED:
             snprintf(vbuf, sizeof(vbuf), "%2d", song.initial_speed);
+            val_color = PAL_DIM;
             break;
         case PROW_MASTER_VOL:
             snprintf(vbuf, sizeof(vbuf), "%3d", song.global_volume);
             break;
         case PROW_CHANNELS:
             snprintf(vbuf, sizeof(vbuf), "%2d", song.channel_count);
+            val_color = PAL_DIM;
             break;
         case PROW_REPEAT_POS:
             snprintf(vbuf, sizeof(vbuf), "%3d", song.repeat_position);
@@ -783,7 +757,6 @@ void project_view_input(u32 down, u32 held)
             switch (row) {
             case PROW_TEMPO:            adjust_value(row, 10);  break;
             case PROW_MASTER_VOL:       adjust_value(row, 10);  break;
-            case PROW_SPEED:            adjust_value(row, 5);   break;
             case PROW_REPEAT_POS:       adjust_value(row, 10);  break;
             case PROW_KEY_REPEAT_DELAY: adjust_value(row, 5);   break;
             case PROW_KEY_REPEAT_RATE:  adjust_value(row, 5);   break;
@@ -794,7 +767,6 @@ void project_view_input(u32 down, u32 held)
             switch (row) {
             case PROW_TEMPO:            adjust_value(row, -10); break;
             case PROW_MASTER_VOL:       adjust_value(row, -10); break;
-            case PROW_SPEED:            adjust_value(row, -5);  break;
             case PROW_REPEAT_POS:       adjust_value(row, -10); break;
             case PROW_KEY_REPEAT_DELAY: adjust_value(row, -5);  break;
             case PROW_KEY_REPEAT_RATE:  adjust_value(row, -5);  break;
