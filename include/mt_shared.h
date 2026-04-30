@@ -37,7 +37,7 @@ typedef struct {
  */
 typedef struct {
     volatile MT_Cell *cells;     /* Pointer to flat cell array (NULL = empty) */
-    u16               nrows;     /* Number of rows (1-based count) */
+    volatile u16      nrows;     /* Number of rows (1-based count) */
     u16               pad;
 } MT_PatternEntry;
 
