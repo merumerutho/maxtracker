@@ -108,7 +108,7 @@ In practice, only changed rows need redrawing. The pattern grid scrolls by row, 
 
 ### 3.1 Overview Mode (8 channels, navigation / preview only)
 
-No data entry in this mode — it provides the classic multi-channel tracker view
+No data entry in this mode; it provides the classic multi-channel tracker view
 for spatial awareness. Press A to zoom into the selected channel for editing.
 
 ```

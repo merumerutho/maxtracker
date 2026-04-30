@@ -217,7 +217,7 @@ int wav_save_mono16(const char *path, const s16 *pcm,
 ```
 
 8-bit samples are upconverted to 16-bit (`<< 8`) on the fly before the
-write — see `sv_do_save()` in `sample_view.c`.
+write; see `sv_do_save()` in `sample_view.c`.
 
 ### 5.3 Memory & lifecycle
 
@@ -225,7 +225,7 @@ WAV files can be large. The loader allocates the destination buffer
 itself; the caller is responsible for `free()` (or for handing it off
 to the song model, which takes ownership of `MT_Sample.pcm_data`).
 Before any free of an existing `pcm_data` pointer, the disk-screen
-`.wav` branch first stops playback and closes the LFE editor — both
+`.wav` branch first stops playback and closes the LFE editor, since both
 modules can hold pointers into the old buffer, and freeing without
 detaching them was the source of a use-after-free fixed in 2026-04.
 
@@ -285,17 +285,17 @@ The auto-save file is overwritten each time. On startup, if `autosave.mas` exist
 
 ### 8.1 Navigation
 
-Standard directory browser using POSIX `opendir`/`readdir`. Sorted alphabetically with directories first. D-pad for scrolling, A to enter directory or load file, B to go up one level. **B at the configured root** is clamped — pressing B in an empty root no longer walks above it (an earlier bug let the user lock themselves out of the SHIFT+DOWN exit).
+Standard directory browser using POSIX `opendir`/`readdir`. Sorted alphabetically with directories first. D-pad for scrolling, A to enter directory or load file, B to go up one level. **B at the configured root** is clamped: pressing B in an empty root no longer walks above it (an earlier bug let the user lock themselves out of the SHIFT+DOWN exit).
 
 ### 8.2 File Type Detection
 
 By extension: `.mas` files are offered for full song load; `.wav` and `.raw` files are offered for sample import.
 
-The destination sample slot is chosen by the disk-screen `.wav` branch in `main.c` based on the routing globals described in §8.4 — either the slot the SAMPLE view was on, or (legacy fallback) `cursor.instrument - 1`.
+The destination sample slot is chosen by the disk-screen `.wav` branch in `main.c` per the routing globals in section 8.4: either the slot the SAMPLE view was on, or (legacy fallback) `cursor.instrument - 1`.
 
 ### 8.3 Path Management
 
-Current directory is tracked as a string. Maximum path depth: 8 levels. Maximum filename display: 28 characters (truncated with `...` if longer). The browser caps at `FB_MAX_ENTRIES` (64) per directory; excess entries are silently dropped — known limitation, not surfaced to the user yet.
+Current directory is tracked as a string. Maximum path depth: 8 levels. Maximum filename display: 28 characters (truncated with `...` if longer). The browser caps at `FB_MAX_ENTRIES` (64) per directory; excess entries are silently dropped (known limitation, not surfaced to the user yet).
 
 ### 8.4 Disk-screen routing globals
 
@@ -307,7 +307,7 @@ extern u8         sample_load_target;   // 1-based sample slot for .wav route
                                         // (0 = legacy cursor.instrument path)
 ```
 
-Each opener sets both before calling `screen_set_mode(SCREEN_DISK)`. The exit paths (B-at-root in `main.c`, SHIFT+DOWN in `navigation.c`, post-load auto-return) honor and reset them. See `doc/architecture.md § 9b` for the full convention and the per-opener table.
+Each opener sets both before calling `screen_set_mode(SCREEN_DISK)`. The exit paths (B-at-root in `main.c`, SHIFT+DOWN in `navigation.c`, post-load auto-return) honor and reset them. See `doc/architecture.md section 9b` for the full convention and the per-opener table.
 
 ### 8.5 Naming flow (text input modal)
 
@@ -317,7 +317,7 @@ sample's user-facing name (32 chars max) is editable via the
 `text_input` QWERTY keyboard widget (PROJECT Song Name row, SAMPLE
 `>> Rename` action) but is **not** persisted in either the MAS file
 (MAS has no name section) or the saved `.wav` filename. Names live in
-RAM only — a documented v1 tradeoff.
+RAM only, a documented v1 tradeoff.
 
 ---
 

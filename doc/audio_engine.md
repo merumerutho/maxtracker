@@ -8,7 +8,7 @@ Parent: [DESIGN.md](../DESIGN.md)
 
 maxtracker modifies maxmod's pattern reader to consume flat `MT_Cell` arrays directly from shared RAM, bypassing the RLE-compressed MAS pattern stream. All other maxmod subsystems (effects processing, envelope evaluation, sample playback, software mixer) remain unmodified.
 
-This approach means:
+This gives:
 - **Edit-and-hear**: change a note, hear it on the next playback pass without restarting.
 - **Full effect fidelity**: all maxmod effects work exactly as documented because the effect processing code is untouched.
 - **Low risk**: the patch surface is small (~100 lines), localized to one function.
@@ -299,16 +299,16 @@ The .mas files that maxtracker exports are **standard, unmodified MAS files** th
 
 maxmod's ARM7 initialization is **asynchronous**. The sequence is:
 
-1. ARM7 calls `mmInstall(FIFO_MAXMOD)` — registers FIFO comms, but does NOT
+1. ARM7 calls `mmInstall(FIFO_MAXMOD)`: registers FIFO comms, but does NOT
    initialize the mixer, timers, or event system. `mmIsInitialized()` returns false.
 
-2. ARM9 calls `mmInit(&sys)` — sends `MSG_BANK` via FIFO to ARM7.
+2. ARM9 calls `mmInit(&sys)`: sends `MSG_BANK` via FIFO to ARM7.
 
 3. ARM7's FIFO datamsg handler receives `MSG_BANK` and calls `mmInit7()`, which:
    - Sets up Timer 0 ISR (`mmFrame`)
    - Initializes the mixer, volumes, channels
    - Calls `mmSetEventHandler(mmEventForwarder)` (default forwarder)
-   - Calls `mmInitialize(1)` — marks maxmod as initialized
+   - Calls `mmInitialize(1)`, marking maxmod as initialized
 
 **Critical gotcha:** Any call to `mmSetEventHandler()` BEFORE step 3 completes
 will be **silently overwritten** by `mmInit7()`, which always sets the handler
@@ -319,7 +319,7 @@ because it was registered before `mmInit7()` ran.
 ```c
 // ARM7 main():
 mmInstall(FIFO_MAXMOD);
-// DON'T call mmSetEventHandler here — mmInit7 hasn't run yet
+// DON'T call mmSetEventHandler here -- mmInit7 hasn't run yet
 
 // Wait for ARM9's mmInit to trigger mmInit7 via FIFO:
 while (!mmIsInitialized())

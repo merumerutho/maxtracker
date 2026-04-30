@@ -25,10 +25,10 @@ card. Create a `data/` folder next to it for song storage.
 
 Developer guides live in [doc/](doc/):
 
-- [DEVELOPING.md](doc/DEVELOPING.md) — build, run, test, where to start
-- [architecture.md](doc/architecture.md) — code structure and IPC contract
-- [hardware_quirks.md](doc/hardware_quirks.md) — NDS-specific rules
-- [conventions.md](doc/conventions.md) — coding conventions
+- [DEVELOPING.md](doc/DEVELOPING.md) -- build, run, test, where to start
+- [architecture.md](doc/architecture.md) -- code structure and IPC contract
+- [hardware_quirks.md](doc/hardware_quirks.md) -- NDS-specific rules
+- [conventions.md](doc/conventions.md) -- coding conventions
 
 ## Dependencies
 

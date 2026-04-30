@@ -71,14 +71,14 @@ The right place for that information is the commit message, the PR description, 
 
 ```c
 /*
- * undo_push_block — Snapshot a rectangular block before editing it.
+ * undo_push_block -- Snapshot a rectangular block before editing it.
  * row_start..row_end and ch_start..ch_end are inclusive.
  */
 ```
 
 Inclusive vs exclusive ranges are the kind of thing the function name can't convey, so the comment is earning its keep.
 
-**Single-line clarifying comments are OK in surprising places.** If a line of code is unavoidably non-obvious — a workaround for a hardware bug, a numeric constant that came from somewhere specific, a non-standard ordering — a one-line comment is appropriate. Example:
+**Single-line clarifying comments are OK in surprising places.** If a line of code is unavoidably non-obvious (a workaround for a hardware bug, a numeric constant that came from somewhere specific, a non-standard ordering), a one-line comment is appropriate. Example:
 
 ```c
 fatInitDefault();    // must precede mmInit on real hardware (see hardware_quirks.md § 2)
@@ -108,7 +108,7 @@ The project's naming is informal but consistent. A few conventions to follow:
 
 **Globals are snake_case without a prefix.** `song`, `cursor`, `clipboard`, `note_clipboard`. They don't need a project prefix because they're already in a small scope (the whole program).
 
-**Boolean accessors and predicates start with a verb.** `playback_is_playing`, `clipboard_has_block`, `mt_mem_check`. Read the function name aloud — if it sounds like a question, it's correctly named.
+**Boolean accessors and predicates start with a verb.** `playback_is_playing`, `clipboard_has_block`, `mt_mem_check`. Read the function name aloud; if it sounds like a question, it's correctly named.
 
 **Acronyms in names are uppercase or all-lowercase, not mixed.** `mas_load` and `MAS_HEADER_SIZE` are both fine; `Mas_Load` is not.
 
@@ -129,9 +129,9 @@ The project uses return codes, not exceptions. There are no `setjmp`/`longjmp` p
 
 At a boundary, validate aggressively. Check ranges. Bounds-check offsets. Verify magic numbers. Reject malformed input. Return an error code.
 
-Inside the trust boundary — when a function is being called by other functions in the same module that you control — don't re-validate things the caller has already verified. Pre-validating the same condition five times wastes code, wastes performance, and makes the actual logic harder to read.
+Inside the trust boundary (when a function is being called by other functions in the same module that you control), don't re-validate things the caller has already verified. Pre-validating the same condition five times wastes code, wastes performance, and makes the actual logic harder to read.
 
-For example, `clipboard_paste(MT_Pattern *pat, u8 row, u8 channel)` accepts a pattern pointer that the caller is supposed to have produced from the song model. We validate `row >= pat->nrows` defensively (recently added — see the bug fix from earlier in development) because that condition can occur if the cursor drifts out of bounds. We don't validate `pat != NULL` checks against `pat->ncols == 0`, because anything that produced an `MT_Pattern *` already knows it's well-formed.
+For example, `clipboard_paste(MT_Pattern *pat, u8 row, u8 channel)` accepts a pattern pointer that the caller is supposed to have produced from the song model. We validate `row >= pat->nrows` defensively because that condition can occur if the cursor drifts out of bounds. We don't validate `pat != NULL` checks against `pat->ncols == 0`, because anything that produced an `MT_Pattern *` already knows it's well-formed.
 
 **Errors propagate with negative return codes.** The convention across the project is:
 
@@ -143,9 +143,9 @@ When you add a new function that can fail, follow this pattern. Define the speci
 
 **Don't introduce error handling for impossible cases.** If a function is called from exactly one place that already verified the input, don't add a "what if NULL" check inside the function "just to be safe". The check costs space, costs cycles, and trains the reader to mistrust internal call paths. Save the defensive checks for the boundary.
 
-The exception is when the function is exported (declared in a header) and could be called from a future caller you don't control. Then defensive checks earn their keep — the trust boundary now includes "future me".
+The exception is when the function is exported (declared in a header) and could be called from a future caller you don't control. Then defensive checks earn their keep, since the trust boundary now includes "future me".
 
-**No silent failures.** If a function fails and the caller doesn't check, that's a bug in the caller. But if a function fails *silently* — does nothing, returns success, leaves no trace — that's a bug in the function. Always return an error code or set an error flag.
+**No silent failures.** If a function fails and the caller doesn't check, that's a bug in the caller. But if a function fails *silently* (does nothing, returns success, leaves no trace), that's a bug in the function. Always return an error code or set an error flag.
 
 **Status messages are how we tell the user about failures.** The pattern is:
 
@@ -200,7 +200,7 @@ Header files in this project follow a strict form:
 
 ```c
 /*
- * filename.h — One-line description of what this module does.
+ * filename.h -- One-line description of what this module does.
  *
  * Optional second paragraph if there are surprising invariants or
  * cross-cutting concerns the user must know.
@@ -250,7 +250,7 @@ A `.c` file follows this rough structure:
 
 ```c
 /*
- * filename.c — One-line description.
+ * filename.c -- One-line description.
  */
 
 #include "filename.h"
@@ -276,7 +276,7 @@ void module_do_thing(SomeType *t) { ... }
 
 **Statics first, then helpers, then public API.** The reader can scroll top-to-bottom and see state, helpers, then the meaningful functions. Functions used before they're defined need a forward declaration.
 
-**Group related functions together.** Don't intersperse a public API function with three helpers. Put all helpers above the public functions that use them (or below, if there are many helpers and the public API is small — pick whichever is easier to navigate).
+**Group related functions together.** Don't intersperse a public API function with three helpers. Put all helpers above the public functions that use them (or below, if there are many helpers and the public API is small; pick whichever is easier to navigate).
 
 **One module = one purpose.** If a `.c` file is doing two unrelated things, split it. The project's modules average ~300-500 lines. The big exception is `main.c`, which is 1500+ lines and known to need splitting.
 
@@ -288,20 +288,20 @@ Maxtracker uses globals freely for things that exist in exactly one instance per
 
 **The globals you'll encounter are:**
 
-- **`song`** (`arm9/source/core/song.c`) — The single `MT_Song` struct that holds the currently-loaded song. Every UI view reads it; the controller writes it.
-- **`cursor`** (`arm9/source/ui/editor_state.c`) — The editor cursor. Read by every view, written by the controller.
-- **`clipboard`** (`arm9/source/core/clipboard.c`) — The block clipboard.
-- **`note_clipboard`** (`arm9/source/core/clipboard.c`) — The single-slot clipboard for M8-style A-press copy/paste.
-- **`shared_state`** (`arm9/source/core/playback.c`) — The cross-CPU shared state struct. ARM9 writes most fields; ARM7 writes the position state.
-- **`current_screen`** (`arm9/source/ui/screen.c`) — Current `ScreenMode`.
-- **`top_fb`, `bot_fb`** (`arm9/source/ui/screen.c`) — Framebuffer pointers.
-- **`status_msg`, `status_timer`** (`arm9/source/core/main.c`) — User-facing status message.
+- **`song`** (`arm9/source/core/song.c`) -- The single `MT_Song` struct that holds the currently-loaded song. Every UI view reads it; the controller writes it.
+- **`cursor`** (`arm9/source/ui/editor_state.c`) -- The editor cursor. Read by every view, written by the controller.
+- **`clipboard`** (`arm9/source/core/clipboard.c`) -- The block clipboard.
+- **`note_clipboard`** (`arm9/source/core/clipboard.c`) -- The single-slot clipboard for M8-style A-press copy/paste.
+- **`shared_state`** (`arm9/source/core/playback.c`) -- The cross-CPU shared state struct. ARM9 writes most fields; ARM7 writes the position state.
+- **`current_screen`** (`arm9/source/ui/screen.c`) -- Current `ScreenMode`.
+- **`top_fb`, `bot_fb`** (`arm9/source/ui/screen.c`) -- Framebuffer pointers.
+- **`status_msg`, `status_timer`** (`arm9/source/core/main.c`) -- User-facing status message.
 
 Each of these has exactly one definition (`extern` declared in the header, defined in the corresponding `.c` file). Don't add a second one. If you find yourself wanting "another cursor" or "another song", you're probably solving the wrong problem.
 
 **File-scope statics are fine for screen-local state.** A view file may have static variables that hold scroll positions, animation frame counters, or other state that doesn't need to be visible outside the file. Use them. The rule is: state is global if it must outlive the screen mode; state is file-scope-static if it only matters while that screen is active; state is automatic (stack-local) if it only matters for the duration of one function.
 
-**Don't pass globals as parameters.** If a function operates on the song, it reads the global `song`. Don't write `do_thing(MT_Song *s, ...)` and then call it as `do_thing(&song, ...)`. The exception is functions that genuinely operate on a *different* song instance — for example, the host test harness sometimes wants to load into a temporary song struct for differential testing. In that case, the parameter earns its keep.
+**Don't pass globals as parameters.** If a function operates on the song, it reads the global `song`. Don't write `do_thing(MT_Song *s, ...)` and then call it as `do_thing(&song, ...)`. The exception is functions that genuinely operate on a *different* song instance, e.g. the host test harness loading into a temporary song struct for differential testing. In that case, the parameter earns its keep.
 
 ---
 
@@ -310,7 +310,7 @@ Each of these has exactly one definition (`extern` declared in the header, defin
 There is no threading on ARM9. The only "concurrency" is:
 
 - **Interrupt handlers**, which preempt the main loop. Maxtracker's IRQ handlers all follow the same convention: read a value into a static volatile, set a flag, return. The main loop drains the flag.
-- **The other CPU**, which runs concurrently and has its own contract. Read [architecture.md § 8](architecture.md) and [hardware_quirks.md](hardware_quirks.md) for the rules.
+- **The other CPU**, which runs concurrently and has its own contract. Read [architecture.md section 8](architecture.md) and [hardware_quirks.md](hardware_quirks.md) for the rules.
 
 This means inside the main loop you can treat all of `song`, `cursor`, `clipboard`, etc. as exclusively yours. No locks, no atomics, no `volatile` qualifiers needed. The only place `volatile` is needed is on memory shared with ARM7 or with an interrupt handler.
 
@@ -342,7 +342,7 @@ The rule is: extract the helper when there's a fourth caller, OR when the duplic
 
 ## 11. Testing
 
-**Write a test when the bug bites.** Most code in this project doesn't have a unit test, and that's correct — the test plan is in [test_plan.md](test_plan.md), and the host tests cover the high-leverage areas (song model, clipboard, undo, MAS roundtrip). When a bug is found in code that wasn't tested, the right response is usually:
+**Write a test when the bug bites.** Most code in this project doesn't have a unit test, and that's fine: the test plan is in [test_plan.md](test_plan.md), and the host tests cover the high-leverage areas (song model, clipboard, undo, MAS roundtrip). When a bug is found in code that wasn't tested, the right response is usually:
 
 1. Reproduce the bug as a test case in `test/test.c` or one of the comparison tools.
 2. Verify the test fails on the broken code.
@@ -354,13 +354,13 @@ This means the test exists permanently to prevent regression. It also means you 
 
 **Don't write tests "for coverage".** A test that does `MT_ASSERT_EQ(song_init(); song.initial_tempo, 125)` adds no value because nothing has ever broken `song.initial_tempo`. Tests that exist only to make the count go up are noise.
 
-**Prefer high-level integration tests.** A test that exercises five subsystems together (load → edit → save → reload → check) catches more real bugs per line than a test that exercises one function in isolation. The host test infrastructure was built with this in mind.
+**Prefer high-level integration tests.** A test that exercises five subsystems together (load -> edit -> save -> reload -> check) catches more real bugs per line than a test that exercises one function in isolation. The host test infrastructure was built with this in mind.
 
 **Tests should be deterministic and fast.** Aim for under 10 ms per test. Don't depend on system clocks, on file system state across runs, or on the order in which tests run. If you need a "before" and "after" comparison, build both halves inside the test.
 
 **Stub aggressively when it helps clarity.** The host test `nds_shim.h` stubs out the entire NDS hardware layer (FIFO, DMA, VRAM, cache operations) so the song model can be tested without an emulator. When you add a host test that needs another stubbed function, add it to the shim with a no-op or sentinel implementation. Don't try to make the test "more realistic" by linking real NDS code.
 
-See [DEVELOPING.md § 5](DEVELOPING.md) for the practical mechanics of adding a test.
+See [DEVELOPING.md section 5](DEVELOPING.md) for the practical mechanics of adding a test.
 
 ---
 
@@ -413,7 +413,7 @@ A grab bag of patterns that have come up enough to be worth listing.
 
 If the conventions don't cover your case, the fallback is: **match the closest existing code**. Find a file in the project that does something similar to what you're doing, read it, and follow its style. The codebase is small enough that there's almost always a precedent.
 
-If there genuinely isn't a precedent and you're introducing a new pattern, document it in this file in the same commit. The point of conventions is consistency, not following arbitrary rules — but they have to be written down somewhere or they aren't conventions, they're just one developer's habits.
+If there genuinely isn't a precedent and you're introducing a new pattern, document it in this file in the same commit. The point of conventions is consistency, not following arbitrary rules, but they have to be written down somewhere or they aren't conventions, they're just one developer's habits.
 
 ---
 

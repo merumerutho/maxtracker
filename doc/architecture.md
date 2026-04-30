@@ -73,7 +73,7 @@ Three things to internalize about this loop:
 
 **Every frame redraws everything.** None of the views are dirty-rectangle-aware or repaint-on-demand. They read whatever's currently in `song`, `cursor`, and `playback`'s state and rebuild the framebuffer pixel by pixel from scratch. This is the immediate-mode pattern; it's covered in detail in section 6.
 
-**`playback_update()` runs unconditionally at the end of every frame.** This is how ARM9 learns about playback position changes — there's no callback or interrupt for it. ARM7 writes to `mt_shared->pos_state` whenever the song advances; ARM9 reads it once per frame through the uncached mirror. The cursor's `play_row`, `play_order`, and `playing` flag are populated here. If you're in follow mode (`cursor.follow` is true and `cursor.playing` is true), `cursor.row` and `cursor.order_pos` are also overwritten with the playback position.
+**`playback_update()` runs unconditionally at the end of every frame.** This is how ARM9 learns about playback position changes: there's no callback or interrupt for it. ARM7 writes to `mt_shared->pos_state` whenever the song advances; ARM9 reads it once per frame through the uncached mirror. The cursor's `play_row`, `play_order`, and `playing` flag are populated here. If you're in follow mode (`cursor.follow` is true and `cursor.playing` is true), `cursor.row` and `cursor.order_pos` are also overwritten with the playback position.
 
 The loop is timed by `swiWaitForVBlank()`, which gives a steady ~59.83 Hz on real hardware. Anything you put inside the loop must complete in less than one frame budget, including the worst-case redraw of the busiest screen. The pattern view is the heaviest at the moment because it can draw 8 channels x 28 visible rows of text.
 
@@ -96,7 +96,7 @@ Two specific consequences of this mapping that aren't obvious:
 
 **The view is allowed to query `playback.c`.** A view like `pattern_view` calls `playback_get_mute_mask()` to color muted channels. This is technically a model-to-view leak, but `playback.c` is the canonical source of mute state at runtime, and threading it through some intermediate object would be ceremony without value at this scale. The rule is: views may *read* from `playback.c`, but should not *call* anything that mutates audio state. Starting and stopping playback is the controller's job.
 
-**The controller is concentrated in `main.c`.** All input dispatch lives in one file. This is why `main.c` is currently 1500+ lines and why it's marked for a future split into `scene_manager.c` and `input_router.c`. When you make that split, the rule of thumb is: code that decides *which screen we're on* belongs in scene management; code that interprets buttons *for the current screen* belongs in the per-screen handlers (which already live in the view files in some cases — `instrument_view_input`, etc.).
+**The controller is concentrated in `main.c`.** All input dispatch lives in one file. This is why `main.c` is currently 1500+ lines and why it's marked for a future split into `scene_manager.c` and `input_router.c`. When you make that split, the rule of thumb is: code that decides *which screen we're on* belongs in scene management; code that interprets buttons *for the current screen* belongs in the per-screen handlers (which already live in the view files in some cases, e.g. `instrument_view_input`).
 
 ---
 
@@ -106,51 +106,51 @@ A one-paragraph orientation per file. A more detailed per-file reference will li
 
 ### Core (`arm9/source/core/`)
 
-- **`song.h/.c`** — The `MT_Song` struct and its allocator. `song_init` zeroes everything and seeds defaults including a square-wave sample so playback works out of the box. `song_alloc_pattern` allocates the variable-size `MT_Pattern` and notifies the registered lifecycle hooks. `song_free` is symmetric. The model has zero behavior beyond storage and lifecycle.
-- **`playback.h/.c`** — ARM9's audio shim. Maintains the `shared_state` struct that ARM7 reads, sends FIFO commands, registers lifecycle hooks at init time, and provides `playback_update()` for the frame loop to pull the latest position. Also owns `playback_preview_note` for non-sequenced note auditioning.
-- **`clipboard.h/.c`** — Two clipboards: a block clipboard for multi-cell selections (`MT_Clipboard`, malloc-backed) and a single-slot note clipboard for M8-style A-press copy/paste (`MT_NoteClipboard`, value-typed). They are independent so single-slot operations don't clobber multi-cell selections.
-- **`undo.h/.c`** — Fixed-depth ring buffer of pattern edits. Each entry is a malloc'd snapshot of the cells about to be modified. `count_rows` is u16 because patterns can be 256 rows tall and a u8 truncates to zero on full-pattern blocks. The ring is 64 entries deep (`MT_UNDO_DEPTH`).
-- **`scale.h/.c`** — Music theory utilities: note name lookup, semitone math, scale-aware key navigation. Pure functions, no state.
-- **`memtrack.h/.c`** — Memory usage estimation and the sentinel-based "do you have enough RAM" check used by the loader. The check is soft; it sets a warning flag but doesn't block.
-- **`main.c`** — Entry point, frame loop, scene dispatch, every per-screen input handler that hasn't been moved into its view file. The biggest file in the project. Marked for future splitting.
+- **`song.h/.c`** -- The `MT_Song` struct and its allocator. `song_init` zeroes everything and seeds defaults including a square-wave sample so playback works out of the box. `song_alloc_pattern` allocates the variable-size `MT_Pattern` and notifies the registered lifecycle hooks. `song_free` is symmetric. The model has zero behavior beyond storage and lifecycle.
+- **`playback.h/.c`** -- ARM9's audio shim. Maintains the `shared_state` struct that ARM7 reads, sends FIFO commands, registers lifecycle hooks at init time, and provides `playback_update()` for the frame loop to pull the latest position. Also owns `playback_preview_note` for non-sequenced note auditioning.
+- **`clipboard.h/.c`** -- Two clipboards: a block clipboard for multi-cell selections (`MT_Clipboard`, malloc-backed) and a single-slot note clipboard for M8-style A-press copy/paste (`MT_NoteClipboard`, value-typed). They are independent so single-slot operations don't clobber multi-cell selections.
+- **`undo.h/.c`** -- Fixed-depth ring buffer of pattern edits. Each entry is a malloc'd snapshot of the cells about to be modified. `count_rows` is u16 because patterns can be 256 rows tall and a u8 truncates to zero on full-pattern blocks. The ring is 64 entries deep (`MT_UNDO_DEPTH`).
+- **`scale.h/.c`** -- Music theory utilities: note name lookup, semitone math, scale-aware key navigation. Pure functions, no state.
+- **`memtrack.h/.c`** -- Memory usage estimation and the sentinel-based "do you have enough RAM" check used by the loader. The check is soft; it sets a warning flag but doesn't block.
+- **`main.c`** -- Entry point, frame loop, scene dispatch, every per-screen input handler that hasn't been moved into its view file. The biggest file in the project. Marked for future splitting.
 
 ### I/O (`arm9/source/io/`)
 
-- **`mas_write.h/.c`** — Serializes `MT_Song` to maxmod's `.mas` binary format. Pattern RLE compression follows mmutil's `Write_Pattern` exactly, including the field-caching and MF flag carry-forward logic. Envelope encoding follows mmutil's `Write_Instrument_Envelope`.
-- **`mas_load.h/.c`** — Inverse of `mas_write`. Reads a whole `.mas` file into a buffer, then parses it into the global `song`. All offset dereferences are bounds-checked against `file_size`. Returns 0 on success, 1 on success-with-warnings, negative on hard failure.
-- **`wav_load.h/.c`** — Loads a WAV file into raw PCM bytes. Used by the disk screen when the user picks a `.wav` file.
-- **`filebrowser.h/.c`** — Generic file browser used by the disk screen. Independent of any particular file format.
+- **`mas_write.h/.c`** -- Serializes `MT_Song` to maxmod's `.mas` binary format. Pattern RLE compression follows mmutil's `Write_Pattern` exactly, including the field-caching and MF flag carry-forward logic. Envelope encoding follows mmutil's `Write_Instrument_Envelope`.
+- **`mas_load.h/.c`** -- Inverse of `mas_write`. Reads a whole `.mas` file into a buffer, then parses it into the global `song`. All offset dereferences are bounds-checked against `file_size`. Returns 0 on success, 1 on success-with-warnings, negative on hard failure.
+- **`wav_load.h/.c`** -- Loads a WAV file into raw PCM bytes. Used by the disk screen when the user picks a `.wav` file.
+- **`filebrowser.h/.c`** -- Generic file browser used by the disk screen. Independent of any particular file format.
 
 ### UI (`arm9/source/ui/`)
 
-- **`screen.h/.c`** — Initializes both NDS screens in 8bpp bitmap mode, defines the global palette, exposes `top_fb`/`bot_fb` framebuffer pointers, and tracks `current_screen`. `screen_set_mode` is the scene-transition primitive.
-- **`font.h/.c`** — Bitmap font renderer. The whole UI is text-mode. `font_puts`, `font_putc`, `font_printf`, `font_fill_row`, `font_clear` are the public primitives.
-- **`editor_state.h/.c`** — The global `EditorCursor` struct. Read by every view, written by the controller. See section 7.
-- **`navigation.h/.c`** — Centralized SHIFT-chord dispatcher (LSDJ "rooms in a house"). Every view calls `navigation_handle_shift(down, held)` first; if it returns true the view skips its own input handling for that frame. Owns SHIFT+L/R/UP/DOWN screen transitions, SHIFT+START playback, SHIFT+B/A clipboard.
-- **`pattern_view.h/.c`** — The pattern grid. Two display modes: overview (8 channels with note+inst per cell) and inside (single channel with all 5 fields). The pattern view is the only one that doesn't have its own `_input` function — its input handler is `handle_input_pattern` in `main.c`, which is the largest input handler in the project and the one we extended for the new A-press clipboard behavior.
-- **`instrument_view.h/.c`** — Instrument parameter editor. Reads `cursor.instrument` to know which instrument is being edited. B+A reset is two-tap-confirmed.
-- **`sample_view.h/.c`** — Sample editor with waveform display and on-screen action rows (Load / Save / Rename). B+A delete is two-tap-confirmed.
-- **`mixer_view.h/.c`** — Per-channel mute/solo and volume.
-- **`song_view.h/.c`** — Order-table editor.
-- **`project_view.h/.c`** — Song-level metadata + on-screen action rows (New / Load / Save / Save As / Compact). The Song Name row opens the `text_input` keyboard.
-- **`waveform_view.h/.c`** / **`lfe_fx_view.h/.c`** — LFE (LFE) rooms. Gated by `MAXTRACKER_LFE`. Backed by `lib/lfe/`.
-- **`waveform_render.h/.c`** — Shared scope-fill renderer used by every view that draws PCM (sample, LFE editor, LFE FX).
-- **`debug_view.h/.c`** — Tier-1 always-on debug overlay. Auto-disabled in BIG font mode (the 5-row footer would fall off the 24-row grid).
-- **`text_input.h/.c`** — Modal on-screen QWERTY keyboard. Single-instance; while active, owns both screens and steals input from whatever view called `text_input_open()`. Currently used for song + sample renames. See `doc/ui_ux.md § 13`.
-- **`draw_util.h`** — Small drawing helpers shared between views.
+- **`screen.h/.c`** -- Initializes both NDS screens in 8bpp bitmap mode, defines the global palette, exposes `top_fb`/`bot_fb` framebuffer pointers, and tracks `current_screen`. `screen_set_mode` is the scene-transition primitive.
+- **`font.h/.c`** -- Bitmap font renderer. The whole UI is text-mode. `font_puts`, `font_putc`, `font_printf`, `font_fill_row`, `font_clear` are the public primitives.
+- **`editor_state.h/.c`** -- The global `EditorCursor` struct. Read by every view, written by the controller. See section 7.
+- **`navigation.h/.c`** -- Centralized SHIFT-chord dispatcher (LSDJ "rooms in a house"). Every view calls `navigation_handle_shift(down, held)` first; if it returns true the view skips its own input handling for that frame. Owns SHIFT+L/R/UP/DOWN screen transitions, SHIFT+START playback, SHIFT+B/A clipboard.
+- **`pattern_view.h/.c`** -- The pattern grid. Two display modes: overview (8 channels with note+inst per cell) and inside (single channel with all 5 fields). The pattern view is the only one that doesn't have its own `_input` function; its input handler is `handle_input_pattern` in `main.c`, which is the largest input handler in the project and the one we extended for the new A-press clipboard behavior.
+- **`instrument_view.h/.c`** -- Instrument parameter editor. Reads `cursor.instrument` to know which instrument is being edited. B+A reset is two-tap-confirmed.
+- **`sample_view.h/.c`** -- Sample editor with waveform display and on-screen action rows (Load / Save / Rename). B+A delete is two-tap-confirmed.
+- **`mixer_view.h/.c`** -- Per-channel mute/solo and volume.
+- **`song_view.h/.c`** -- Order-table editor.
+- **`project_view.h/.c`** -- Song-level metadata + on-screen action rows (New / Load / Save / Save As / Compact). The Song Name row opens the `text_input` keyboard.
+- **`waveform_view.h/.c`** / **`lfe_fx_view.h/.c`** -- LFE (LFE) rooms. Gated by `MAXTRACKER_LFE`. Backed by `lib/lfe/`.
+- **`waveform_render.h/.c`** -- Shared scope-fill renderer used by every view that draws PCM (sample, LFE editor, LFE FX).
+- **`debug_view.h/.c`** -- Tier-1 always-on debug overlay. Auto-disabled in BIG font mode (the 5-row footer would fall off the 24-row grid).
+- **`text_input.h/.c`** -- Modal on-screen QWERTY keyboard. Single-instance; while active, owns both screens and steals input from whatever view called `text_input_open()`. Currently used for song + sample renames. See `doc/ui_ux.md § 13`.
+- **`draw_util.h`** -- Small drawing helpers shared between views.
 
 ### Tests (`arm9/source/test/`)
 
-- **`test.h/.c`** — Unit tests that can run on either device or host. Compiled into the device build when `UNIT_TESTING` is defined; compiled into the host test binary unconditionally. Houses ~50 test functions covering song model, clipboard, undo, MAS roundtrip, panning encoding, instrument-sample mapping, and grooves.
+- **`test.h/.c`** -- Unit tests that can run on either device or host. Compiled into the device build when `UNIT_TESTING` is defined; compiled into the host test binary unconditionally. Houses ~50 test functions covering song model, clipboard, undo, MAS roundtrip, panning encoding, instrument-sample mapping, and grooves.
 
 ### ARM7 (`arm7/source/`)
 
-- **`main.c`** — ARM7 entry point. Initializes maxmod, installs the FIFO command and address handlers, registers the tick event callback after `mmIsInitialized` returns true (the order matters — see hardware_quirks). The main loop drains "pending" flags set by FIFO handlers in IRQ context.
+- **`main.c`** -- ARM7 entry point. Initializes maxmod, installs the FIFO command and address handlers, registers the tick event callback after `mmIsInitialized` returns true (the order matters; see hardware_quirks). The main loop drains "pending" flags set by FIFO handlers in IRQ context.
 
 ### Shared headers (`include/`)
 
-- **`mt_ipc.h`** — FIFO command opcodes (`MT_CMD_PLAY`, `MT_CMD_STOP`, `MT_CMD_SET_SHARED`, etc.) and the encoding macros that pack a command type plus a 24-bit parameter into a single u32. ARM9 sends these via `fifoSendValue32`; ARM7 decodes them in `mt_ValueHandler`.
-- **`mt_shared.h`** — The `MT_SharedPatternState` struct that lives in main RAM and is read by ARM7 / written by ARM9 (for cells, mute mask, and active flag) and read by ARM9 / written by ARM7 (for `pos_state`). Also defines the `MT_POS_PACK`/`MT_POS_POSITION`/`MT_POS_ROW`/`MT_POS_TICK` macros for the packed playback position field.
+- **`mt_ipc.h`** -- FIFO command opcodes (`MT_CMD_PLAY`, `MT_CMD_STOP`, `MT_CMD_SET_SHARED`, etc.) and the encoding macros that pack a command type plus a 24-bit parameter into a single u32. ARM9 sends these via `fifoSendValue32`; ARM7 decodes them in `mt_ValueHandler`.
+- **`mt_shared.h`** -- The `MT_SharedPatternState` struct that lives in main RAM and is read by ARM7 / written by ARM9 (for cells, mute mask, and active flag) and read by ARM9 / written by ARM7 (for `pos_state`). Also defines the `MT_POS_PACK`/`MT_POS_POSITION`/`MT_POS_ROW`/`MT_POS_TICK` macros for the packed playback position field.
 
 ### Patched maxmod (`lib/maxmod/`)
 
@@ -177,7 +177,7 @@ This is the **immediate-mode UI** pattern, the same approach used by Dear ImGui 
 
 It is not a free choice. Three rules follow from it that contributors must respect:
 
-**Views must not hold persistent mutable state.** If you need to remember something across frames — a scroll position, a "currently editing this field" flag, a temporary input buffer — that state must live somewhere globally accessible (the cursor, the song, a file-scope static in the view), not as a private field of a "view object". There are no view objects.
+**Views must not hold persistent mutable state.** If you need to remember something across frames (a scroll position, a "currently editing this field" flag, a temporary input buffer), that state must live somewhere globally accessible (the cursor, the song, a file-scope static in the view), not as a private field of a "view object". There are no view objects.
 
 **Views must not modify the model from inside `_draw`.** The draw function should be a pure function of state to pixels. If you find yourself wanting to change `song` or `cursor` from within a draw function, that means the work belongs in the input handler. The reason isn't aesthetic: drawing and input run in the same frame, but a draw-time mutation will not be visible until the *next* frame's draw, which produces a one-frame visual lag that's hard to debug.
 
@@ -217,7 +217,7 @@ Both CPUs share access to main RAM. The ARM9 CPU sees main RAM through two addre
 
 There are two independent channels:
 
-**FIFO messages** for events. ARM9 sends a 32-bit value (or an address) on the `FIFO_MT` channel; ARM7's FIFO handler runs in IRQ context and sets a flag. The flag is processed on the next iteration of ARM7's main loop. The same mechanism works in reverse (ARM7 → ARM9) for tick and pattern-end notifications. The encoding is in `mt_ipc.h`: bits 31:24 are the command type, bits 23:0 are a parameter. For commands that need to pass a pointer, ARM9 sends a value command with `MT_CMD_SET_SHARED` or `MT_CMD_SET_MAS`, then sends the pointer with `fifoSendAddress`. ARM7's address handler reads the previously-stored "what kind of address am I expecting" flag and acts accordingly.
+**FIFO messages** for events. ARM9 sends a 32-bit value (or an address) on the `FIFO_MT` channel; ARM7's FIFO handler runs in IRQ context and sets a flag. The flag is processed on the next iteration of ARM7's main loop. The same mechanism works in reverse (ARM7 -> ARM9) for tick and pattern-end notifications. The encoding is in `mt_ipc.h`: bits 31:24 are the command type, bits 23:0 are a parameter. For commands that need to pass a pointer, ARM9 sends a value command with `MT_CMD_SET_SHARED` or `MT_CMD_SET_MAS`, then sends the pointer with `fifoSendAddress`. ARM7's address handler reads the previously-stored "what kind of address am I expecting" flag and acts accordingly.
 
 **Shared memory** for streaming state. The `MT_SharedPatternState` struct in `mt_shared.h` lives in main RAM. ARM9 allocates it (it's a static in `playback.c`) and passes its address to ARM7 once at init via `MT_CMD_SET_SHARED`. After that, both CPUs read and write fields directly. There is no IPC overhead for accessing the shared state; the cost is entirely in the cache management.
 
@@ -233,11 +233,11 @@ ARM9 reads from the shared state through the **uncached mirror** to bypass its o
 
 A single 32-bit aligned load or store on the NDS bus is atomic with respect to the other CPU. A multi-byte load or store made up of multiple bus accesses is not.
 
-This matters for the playback position. ARM7 needs to publish three values per tick (position, row, tick) and ARM9 needs to read them all consistently. If ARM7 writes them as three separate u8 stores and ARM9 reads them as three separate u8 loads, ARM9 can see a torn state — for example a fresh tick paired with a stale row — for one frame.
+This matters for the playback position. ARM7 needs to publish three values per tick (position, row, tick) and ARM9 needs to read them all consistently. If ARM7 writes them as three separate u8 stores and ARM9 reads them as three separate u8 loads, ARM9 can see a torn state, for example a fresh tick paired with a stale row, for one frame.
 
 To avoid this, position/row/tick are packed into a single `volatile u32 pos_state` in the shared struct, with `MT_POS_PACK` / `MT_POS_POSITION` / `MT_POS_ROW` / `MT_POS_TICK` macros to encode and decode. ARM7's tick callback writes `pos_state` in one 32-bit store; ARM9 reads it in one 32-bit load. The two are atomic with respect to each other.
 
-The `playing` flag is its own u8. It's mostly written by ARM9 (at start/stop) and rarely written by ARM7 (only when the song reaches its end). A torn read between `playing` and `pos_state` is benign — if ARM9 sees `playing == 0` it doesn't care about the position fields, and if it sees a stale `playing == 1` it gets one extra frame of position display.
+The `playing` flag is its own u8. It's mostly written by ARM9 (at start/stop) and rarely written by ARM7 (only when the song reaches its end). A torn read between `playing` and `pos_state` is benign: if ARM9 sees `playing == 0` it doesn't care about the position fields, and if it sees a stale `playing == 1` it gets one extra frame of position display.
 
 If you add a new field that needs to be read by one CPU and written by the other, the rules are: keep the field naturally aligned, keep it 32 bits or smaller, don't have both CPUs writing the same field, and on the writer side flush the cache (if writing from ARM9) or just write (if writing from ARM7). If you need to publish more than 32 bits atomically, use a sequence-counter pattern (writer increments before and after, reader retries if the counter changed) or pack the data into 32 bits like `pos_state` does.
 
@@ -251,7 +251,7 @@ The maxmod tick callback (`mt_EventCallback` on ARM7) also runs in tick context,
 
 ### Debugging IPC
 
-Bugs in this layer often don't reproduce in melonDS because melonDS is more forgiving about cache coherency than real hardware. If a feature works in the emulator but glitches on a flashcart, suspect an IPC issue first. The host test suite doesn't exercise the IPC path at all — it links a host stub for `playback.h` and runs everything single-CPU.
+Bugs in this layer often don't reproduce in melonDS because melonDS is more forgiving about cache coherency than real hardware. If a feature works in the emulator but glitches on a flashcart, suspect an IPC issue first. The host test suite doesn't exercise the IPC path at all; it links a host stub for `playback.h` and runs everything single-CPU.
 
 ---
 
@@ -259,7 +259,7 @@ Bugs in this layer often don't reproduce in melonDS because melonDS is more forg
 
 A small but important pattern that exists because of section 8. When `song_alloc_pattern` is about to free an existing pattern and replace it with a new one, ARM7 might be reading that pattern's cells right now via the shared cells pointer. Freeing it underneath ARM7 would cause it to read garbage and play noise, or crash.
 
-To prevent this, the song module doesn't include `playback.h` directly (which would be an upside-down dependency — the model knowing about its consumer). Instead, `song.h` declares a pair of callback registration functions:
+To prevent this, the song module doesn't include `playback.h` directly (which would be an upside-down dependency, the model knowing about its consumer). Instead, `song.h` declares a pair of callback registration functions:
 
 ```c
 typedef void (*song_lifecycle_cb)(void);
@@ -278,14 +278,14 @@ When `song_alloc_pattern` is about to free a pattern, it calls the detach hook f
 
 This is also the reason `song.c` is host-testable in isolation: when there's no playback module linked, the hooks are NULL and the alloc/free paths skip them.
 
-If you add another module that holds a pointer into pattern memory at runtime — for example, a future "pattern visualization" subsystem — register it the same way.
+If you add another module that holds a pointer into pattern memory at runtime, for example a future "pattern visualization" subsystem, register it the same way.
 
 ---
 
 ## 9b. Cross-screen routing globals (Disk browser, modal keyboard)
 
 Two patterns of cross-screen state coordination have settled into the
-codebase. Both are conventions, not enforced by the type system — keep
+codebase. Both are conventions, not enforced by the type system; keep
 them in sync if you change one side.
 
 ### Disk-browser routing
@@ -311,13 +311,13 @@ Every disk-screen opener must set both before calling
 
 Every exit path must honor and clear them:
 
-- `main.c` SCREEN_DISK case (B-at-root) → `screen_set_mode(disk_return_screen);` then `sample_load_target = 0;`
-- `navigation.c` SHIFT+DOWN from SCREEN_DISK → same.
+- `main.c` SCREEN_DISK case (B-at-root) -> `screen_set_mode(disk_return_screen);` then `sample_load_target = 0;`
+- `navigation.c` SHIFT+DOWN from SCREEN_DISK -> same.
 - After a successful `.wav` load with `sample_load_target > 0` the disk
   screen also auto-returns to `SCREEN_SAMPLE`.
 
 If you add a new opener (say a future "load instrument" flow), follow
-the same pattern — set both globals before the screen change, and clear
+the same pattern: set both globals before the screen change, and clear
 them on every exit you can reach.
 
 ### Modal keyboard (`text_input`)
@@ -328,7 +328,7 @@ caller is expected to forward input frames to `text_input_input()` and
 draws to `text_input_draw()`, returning early from its own handlers
 until the keyboard closes itself (OK or CANCEL).
 
-This means the keyboard does NOT need its own `ScreenMode` value — it
+This means the keyboard does NOT need its own `ScreenMode` value; it
 piggybacks on whichever view opened it. A side benefit: the active
 `current_screen` is preserved across the modal, so cancel-then-close
 returns the user exactly where they were.
@@ -384,7 +384,7 @@ A few common change patterns and where to put the code.
 
 **Adding a new effect or instrument feature.** This is mostly a song-model change (`song.h`) plus serialization changes in `mas_write.c` and `mas_load.c`. The playback engine itself is stock maxmod; you only need to touch `lib/maxmod/source/core/mas.c` if you're adding an effect maxmod doesn't already implement, which is unlikely.
 
-**Adding a host test.** Add a `MT_RUN(test_function)` call in `arm9/source/test/test.c`. The test must be pure-logic — no NDS hardware, no playback. If you need to stub something, look at `test/nds_shim.h` and `test/engine_stubs.c` for the existing pattern. See [DEVELOPING.md](DEVELOPING.md) for the test build commands.
+**Adding a host test.** Add a `MT_RUN(test_function)` call in `arm9/source/test/test.c`. The test must be pure-logic: no NDS hardware, no playback. If you need to stub something, look at `test/nds_shim.h` and `test/engine_stubs.c` for the existing pattern. See [DEVELOPING.md](DEVELOPING.md) for the test build commands.
 
 **Adding a new file format reader.** Put it under `arm9/source/io/`. Follow the pattern from `wav_load.c`: the function takes a path and out-pointers, returns 0 or a negative error code, and never assumes the file is well-formed.
 
@@ -426,17 +426,17 @@ A third item that's been considered and rejected: introducing a full event bus o
 
 A few terms used throughout the maxtracker codebase that might be unfamiliar.
 
-- **Cell** — One step in a pattern: `note + instrument + volume + effect + parameter`, 5 bytes.
-- **Pattern** — A 2D array of cells, one row per step and one column per channel. Patterns are variable-size and stored as `MT_Pattern` with a flexible array member.
-- **Order** — A sequence number in the song's playback list. The order table maps order positions to pattern indices, so the same pattern can be played multiple times.
-- **Inside / Overview** — The two display modes of the pattern view. Overview shows 8 channels at once with note+instrument per cell. Inside shows a single channel with all 5 fields per cell.
-- **MAS** — The maxmod binary module format. Files maxtracker saves and loads.
-- **MAXTRACKER_MODE** — The compile-time flag that activates the patched `mmReadPattern` in maxmod, switching it from RLE-stream reading to flat-cell reading.
-- **MT_** — Prefix for all maxtracker-defined types and constants (`MT_Cell`, `MT_Pattern`, `MT_Song`, `MT_MAX_CHANNELS`, etc.).
-- **NOTE_EMPTY** — Sentinel value (250) for "this cell has no note". Distinct from `NOTE_OFF` (255) and `NOTE_CUT` (254), both of which are real note events.
-- **Cells pointer** — The flat array of cells inside an `MT_Pattern`. ARM9 publishes a pointer to this in shared state for ARM7 to read.
-- **Pos state** — The packed u32 in shared state holding position, row, and tick for atomic cross-CPU access.
-- **Lifecycle hooks** — The detach/reattach callbacks the song module calls before freeing or replacing a pattern, registered by playback at init time.
+- **Cell** -- One step in a pattern: `note + instrument + volume + effect + parameter`, 5 bytes.
+- **Pattern** -- A 2D array of cells, one row per step and one column per channel. Patterns are variable-size and stored as `MT_Pattern` with a flexible array member.
+- **Order** -- A sequence number in the song's playback list. The order table maps order positions to pattern indices, so the same pattern can be played multiple times.
+- **Inside / Overview** -- The two display modes of the pattern view. Overview shows 8 channels at once with note+instrument per cell. Inside shows a single channel with all 5 fields per cell.
+- **MAS** -- The maxmod binary module format. Files maxtracker saves and loads.
+- **MAXTRACKER_MODE** -- The compile-time flag that activates the patched `mmReadPattern` in maxmod, switching it from RLE-stream reading to flat-cell reading.
+- **MT_** -- Prefix for all maxtracker-defined types and constants (`MT_Cell`, `MT_Pattern`, `MT_Song`, `MT_MAX_CHANNELS`, etc.).
+- **NOTE_EMPTY** -- Sentinel value (250) for "this cell has no note". Distinct from `NOTE_OFF` (255) and `NOTE_CUT` (254), both of which are real note events.
+- **Cells pointer** -- The flat array of cells inside an `MT_Pattern`. ARM9 publishes a pointer to this in shared state for ARM7 to read.
+- **Pos state** -- The packed u32 in shared state holding position, row, and tick for atomic cross-CPU access.
+- **Lifecycle hooks** -- The detach/reattach callbacks the song module calls before freeing or replacing a pattern, registered by playback at init time.
 
 ---
 

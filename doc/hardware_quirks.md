@@ -23,7 +23,7 @@ If you're reading code in `playback.c`, `arm7/source/main.c`, `mt_shared.h`, or 
 
 **Rule:** Never write a single byte to VRAM. Use 16-bit or 32-bit accesses only.
 
-**Why:** The NDS VRAM banks are wired to a bus that decodes 16-bit and 32-bit transactions. An 8-bit write to VRAM is silently dropped — the bus completes the cycle but no bits change. There's no exception, no warning, and no fault. The pixel just doesn't update.
+**Why:** The NDS VRAM banks are wired to a bus that decodes 16-bit and 32-bit transactions. An 8-bit write to VRAM is silently dropped: the bus completes the cycle but no bits change. There's no exception, no warning, and no fault. The pixel just doesn't update.
 
 This is a property of every NDS framebuffer, every background tile map, every OAM entry, and every palette entry. It is not specific to one display mode. Reading from VRAM with 8-bit accesses *does* return the correct value, which makes the asymmetry doubly confusing.
 
@@ -87,7 +87,7 @@ If you add another callback installation in the future, do it in the same place.
 
 **Why:** This is a defensive design that earlier versions of the code got wrong. The naive approach is: ARM7 reaches the end of pattern N, sends a FIFO message to ARM9, ARM9 looks up pattern N+1's cells pointer and writes it into shared state, then sends the address back. This has a race: ARM7 reads the cells pointer once per row, and the FIFO round-trip can take multiple rows on real hardware. ARM7 ends up reading the old (now-freed or -repurposed) cells pointer for some number of rows after the transition.
 
-The fix was to put the entire pattern table directly into `MT_SharedPatternState`. ARM9 populates it once at playback start (an array of `MT_PatternEntry { cells, nrows }` indexed by pattern index, plus the order table). ARM7 then walks it itself when the order position changes — no FIFO needed for the transition. ARM7 still sends `MT_CMD_PATTERN_END` for ARM9's display update, but the actual cells lookup has already happened locally.
+The fix was to put the entire pattern table directly into `MT_SharedPatternState`. ARM9 populates it once at playback start (an array of `MT_PatternEntry { cells, nrows }` indexed by pattern index, plus the order table). ARM7 then walks it itself when the order position changes, so no FIFO is needed for the transition. ARM7 still sends `MT_CMD_PATTERN_END` for ARM9's display update, but the actual cells lookup has already happened locally.
 
 **How to detect violation:** Playback at a pattern boundary is glitchy: notes from the wrong pattern, audible clicks, or a brief silence. Reproduces on real hardware but is much less obvious in melonDS because the FIFO latency there is artificially low.
 
@@ -129,7 +129,7 @@ The fix was to pack `position`, `row`, and `tick` into a single `volatile u32 po
 
 ## 7. Do not put real work in a FIFO handler
 
-**Rule:** FIFO callbacks run in interrupt context. They must do as little as possible — typically just storing a parameter into a static volatile variable and setting a "pending" flag.
+**Rule:** FIFO callbacks run in interrupt context. They must do as little as possible, typically just storing a parameter into a static volatile variable and setting a "pending" flag.
 
 **Why:** Interrupt context is restrictive. Most of libc is not reentrant, so calling printf, malloc, or any standard library function risks corrupting state used by the main thread. Anything that blocks (waiting on FIFO, on disk, on a timer) prevents the interrupted code from making progress and can deadlock. And the longer your handler runs, the more interrupts you delay; a slow FIFO handler can starve VBlank, audio mixing, or input scanning.
 
@@ -167,7 +167,7 @@ If any of these is encoded slightly wrong, the sample plays at the wrong pitch, 
 
 **How to detect violation:** A sample plays at the wrong pitch after save-and-reload, or the loop point shifts by a few samples each loop, or playback runs off the end of the sample into garbage memory. The host test `mas_diff` will catch this immediately because it does a byte-for-byte roundtrip check, which is the main reason that test exists.
 
-**Where it shows up:** `arm9/source/io/mas_write.c` `Write_Sample` (or whichever function emits sample headers — search for `default_frequency`). `C:\Projects\mmutil` is the canonical reference; if you're modifying sample serialization, open mmutil's source side by side. The host test `test/mas_diff.c` exercises the roundtrip; run it after any sample-encoding change.
+**Where it shows up:** `arm9/source/io/mas_write.c` `Write_Sample` (or whichever function emits sample headers; search for `default_frequency`). `C:\Projects\mmutil` is the canonical reference; if you're modifying sample serialization, open mmutil's source side by side. The host test `test/mas_diff.c` exercises the roundtrip; run it after any sample-encoding change.
 
 ---
 
@@ -175,7 +175,7 @@ If any of these is encoded slightly wrong, the sample plays at the wrong pitch, 
 
 **Rule:** When serializing or deserializing an instrument, treat `env_flags` as a 4-bit field. Bits 0-2 are the EXISTS flags for volume, panning, and pitch envelopes. Bit 3 is the volume envelope's enabled flag. Bits 4-7 are unused, must be written as zero, and must be ignored on read.
 
-**Why:** mmutil only defines four bits in `MAS_INSTR_FLAG_*` constants (`source/mas.h:85-88`), and the maxmod playback engine only checks the EXISTS bits when deciding whether to apply pan and pitch envelopes — there is no `PAN_ENV_ENABLED` or `PITCH_ENV_ENABLED` concept anywhere in the engine. The volume envelope is the only one that has a real "enabled but data still present" distinction; pan and pitch envelopes are simply applied if their EXISTS bit is set.
+**Why:** mmutil only defines four bits in `MAS_INSTR_FLAG_*` constants (`source/mas.h:85-88`), and the maxmod playback engine only checks the EXISTS bits when deciding whether to apply pan and pitch envelopes; there is no `PAN_ENV_ENABLED` or `PITCH_ENV_ENABLED` concept anywhere in the engine. The volume envelope is the only one that has a real "enabled but data still present" distinction; pan and pitch envelopes are simply applied if their EXISTS bit is set.
 
 An earlier version of maxtracker invented two extra bits (4 = pan enabled, 5 = pitch enabled) to back a UI toggle in the instrument editor. The bits were correctly written and read, the editor preserved them in roundtrip, and `mas_diff` passed against maxtracker's own files because the read and write paths were symmetrically wrong. The trap was that the bits had no effect on playback (the engine ignored them) and the file format was no longer mmutil-compatible. The fix was to remove the invented bits, derive `env_pan.enabled` and `env_pitch.enabled` from `node_count > 0` after load, and rewire the instrument-editor toggle to actually create or destroy node sets. See `mas_load.c`'s env_flags constants and the `env_create_default` / `env_destroy` helpers in `instrument_view.c`.
 
@@ -191,7 +191,7 @@ An earlier version of maxtracker invented two extra bits (4 = pan enabled, 5 = p
 
 **Why:** Maxmod's pattern decoder treats `MF_DVOL` as "set the channel back to the instrument's default volume". If you combine that with a note-off, the channel retriggers (because the volume just changed) at full volume just as it's supposed to be releasing. The result is a loud click on every note-off, and the release envelope never runs because the channel is in attack instead.
 
-This is not an architectural choice — it's a behavior of stock maxmod's `mmReadPattern` that we have to work around in the encoder.
+This is not an architectural choice; it's a behavior of stock maxmod's `mmReadPattern` that we have to work around in the encoder.
 
 **How to detect violation:** Audible click on every note-off in a song that uses default-volume cells. The release tail never plays. Reproducible on both real hardware and emulators. The host test `playback_cmp` may or may not catch it depending on how the engine state diverges.
 
@@ -227,7 +227,7 @@ This is not an architectural choice — it's a behavior of stock maxmod's `mmRea
 
 **Rule:** Open files with paths like `"./data/song.mas"`, not `"fat:/data/song.mas"`.
 
-**Why:** The `fat:` device prefix used to be required by older versions of libfat, but the current version uses POSIX paths relative to the executable's working directory. Using `fat:/` works in some configurations but not others, and the failure mode is non-obvious — `fopen` returns NULL with no useful error.
+**Why:** The `fat:` device prefix used to be required by older versions of libfat, but the current version uses POSIX paths relative to the executable's working directory. Using `fat:/` works in some configurations but not others, and the failure mode is non-obvious: `fopen` returns NULL with no useful error.
 
 The maxtracker convention is: `fs_browse_root` is set to `"./data/"` when running from a flashcart and `"./"` when running from a NitroFS-embedded build. All file operations should use paths relative to one of those roots.
 
@@ -272,9 +272,9 @@ The fix is the lifecycle hook system described in [architecture.md § 9](archite
 
 When you're chasing a hardware bug and the in-tree code doesn't tell you the answer, three sibling projects on the same machine are the canonical references:
 
-- **`C:\Projects\MAXMXDS`** — A working NDS player using stock maxmod. Compare against this when audio behaves wrong on hardware. If MAXMXDS plays the same `.mas` file correctly and maxtracker doesn't, the bug is in our patch or our IPC layer, not in maxmod itself.
-- **`C:\Projects\mmutil`** — The canonical MAS file format authority. Open this when serialization breaks. The host test `test/mas_diff.c` already does roundtrip validation, but mmutil's source is the ground truth for any field encoding question.
-- **`C:\Projects\mas_spec`** — Format specification documents. Less authoritative than mmutil's source but easier to read.
+- **`C:\Projects\MAXMXDS`** -- A working NDS player using stock maxmod. Compare against this when audio behaves wrong on hardware. If MAXMXDS plays the same `.mas` file correctly and maxtracker doesn't, the bug is in our patch or our IPC layer, not in maxmod itself.
+- **`C:\Projects\mmutil`** -- The canonical MAS file format authority. Open this when serialization breaks. The host test `test/mas_diff.c` already does roundtrip validation, but mmutil's source is the ground truth for any field encoding question.
+- **`C:\Projects\mas_spec`** -- Format specification documents. Less authoritative than mmutil's source but easier to read.
 
 These are not part of the maxtracker repository. They live on the developer machine. If you're working on a clone, you may not have them; in that case, ask the project maintainer or fall back to mmutil's public source on the maxmod GitHub.
 

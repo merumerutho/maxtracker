@@ -1,12 +1,12 @@
 # Effects reference
 
-maxtracker uses IT-style effect codes: one letter (A–Z) plus a two-hex parameter `xy`. The `fx` byte stored in `MT_Cell` is the 1-based numeric code (A=1, B=2, … Z=26). A `fx` of 0 means "no effect".
+maxtracker uses IT-style effect codes: one letter (A-Z) plus a two-hex parameter `xy`. The `fx` byte stored in `MT_Cell` is the 1-based numeric code (A=1, B=2, ... Z=26). A `fx` of 0 means "no effect".
 
-The table below is generated from `arm9/source/core/effects.def` — keep both in sync. Effects flagged **TODO** are parsed and displayed but are not yet dispatched by the maxmod engine, so they are audibly a no-op.
+The table below is generated from `arm9/source/core/effects.def`; keep both in sync. Effects flagged **TODO** are parsed and displayed but not yet dispatched by the maxmod engine, so they are audibly a no-op.
 
 ## How to read the parameter
 
-Most parameters split into high nibble `x` and low nibble `y`. Volume-slide–style effects (**D**, **K**, **L**, **N**, **W**, **P**) share a common encoding:
+Most parameters split into high nibble `x` and low nibble `y`. Volume-slide-style effects (**D**, **K**, **L**, **N**, **W**, **P**) share a common encoding:
 
 | Parameter | Meaning                          |
 |-----------|----------------------------------|
@@ -18,7 +18,7 @@ Most parameters split into high nibble `x` and low nibble `y`. Volume-slide–st
 
 Pitch slides (**E**, **F**) use the same `Fx`/`Ex` sub-encoding for "fine" / "extra-fine".
 
-Tempo (**T**) is split by value range: `00`–`0F` slides tempo down, `10`–`1F` slides up, `>= 20h` sets an absolute BPM.
+Tempo (**T**) is split by value range: `00`-`0F` slides tempo down, `10`-`1F` slides up, `>= 20h` sets an absolute BPM.
 
 ## Effect table
 
@@ -75,11 +75,11 @@ Tempo (**T**) is split by value range: `00`–`0F` slides tempo down, `10`–`1F
 
 ## In-app
 
-While editing a pattern, moving the cursor over the effect or parameter column shows `FX <letter> <name>` on the bottom screen's hint row. The letter column itself is displayed as hex for now — nibble editing (A+arrows) operates on the raw byte.
+While editing a pattern, moving the cursor over the effect or parameter column shows `FX <letter> <name>` on the bottom screen's hint row. The letter column itself is displayed as hex for now; nibble editing (A+arrows) operates on the raw byte.
 
 ## Adding an effect
 
 1. Pick the next free numeric code (> 26) or claim an existing letter.
 2. Add an `FX(...)` line to `arm9/source/core/effects.def`.
-3. Regenerate this document from the X-list (by hand for now — the table above mirrors the def columns).
-4. If the engine needs new dispatch, edit `lib/maxmod/source/core/mas.c` — that's vendor-forked territory; tread carefully.
+3. Regenerate this document from the X-list (by hand for now; the table above mirrors the def columns).
+4. If the engine needs new dispatch, edit `lib/maxmod/source/core/mas.c` -- vendor-forked territory; tread carefully.

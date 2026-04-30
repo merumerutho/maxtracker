@@ -26,15 +26,15 @@ extras as ergonomic modifiers without breaking the LSDJ muscle-memory core.
 
 | NDS Button | LSDJ Equivalent | Role |
 |------------|----------------|------|
-| **SELECT** | **SELECT** | **SHIFT** — primary modifier. Screen switch, copy, paste. |
+| **SELECT** | **SELECT** | **SHIFT** -- primary modifier. Screen switch, copy, paste. |
 | **A** | **A** | Place / confirm / edit value (A+d-pad) |
 | **B** | **B** | Modifier for warp (B+d-pad) and delete (B+A). B alone does nothing. |
 | **START** | **START** | Play / stop transport |
 | **D-pad** | **D-pad** | Navigate (context-sensitive per screen & column) |
 | **L** | *(no equiv)* | Channel/group scroll left, or prev item |
 | **R** | *(no equiv)* | Channel/group scroll right, or next item |
-| **X** | *(no equiv)* | **ALT modifier** — page jump, step size |
-| **Y** | *(no equiv)* | **OPT modifier** — octave, instrument select |
+| **X** | *(no equiv)* | **ALT modifier** -- page jump, step size |
+| **Y** | *(no equiv)* | **OPT modifier** -- octave, instrument select |
 
 The SHIFT button is configurable at compile time via `MT_SHIFT_KEY` (default:
 `KEY_SELECT`). It can be reassigned to X, Y, or R if preferred.
@@ -49,32 +49,32 @@ Song ← → Pattern Overview ← → Inside Column ← → Instrument ← → S
 ```
 
 Each RIGHT step carries context forward:
-- Song → Pattern: enters the pattern at the cursor's order position
-- Overview → Inside: enters the highlighted channel
-- Inside → Instrument: opens the instrument at the cursor row (scans up for last set instrument)
-- Instrument → Sample: opens the sample assigned to that instrument
+- Song -> Pattern: enters the pattern at the cursor's order position
+- Overview -> Inside: enters the highlighted channel
+- Inside -> Instrument: opens the instrument at the cursor row (scans up for last set instrument)
+- Instrument -> Sample: opens the sample assigned to that instrument
 
 Each LEFT step reverses exactly.
 
 UP/DOWN are reversible vertical jumps (UP goes to Mixer, DOWN returns to
 wherever UP came from). The Disk screen is **no longer** opened by a
-SHIFT+START chord — see §11 for the v1 entry path (on-screen LOAD/SAVE
+SHIFT+START chord; see §11 for the v1 entry path (on-screen LOAD/SAVE
 buttons in PROJECT and SAMPLE views).
 
 | Combo | Action | Notes |
 |-------|--------|-------|
-| SHIFT + LEFT | **Navigate back** one step | Sample→Inst→Inside→Overview→Song |
-| SHIFT + RIGHT | **Navigate deeper** with context | Song→Overview→Inside→Inst→Sample |
+| SHIFT + LEFT | **Navigate back** one step | Sample->Inst->Inside->Overview->Song |
+| SHIFT + RIGHT | **Navigate deeper** with context | Song->Overview->Inside->Inst->Sample |
 | SHIFT + UP | Jump to **Mixer** screen | Remembers return screen for DOWN |
 | SHIFT + DOWN | **Return** from Mixer/Disk | Goes back to opener (Disk uses `disk_return_screen`) |
 | SHIFT + START | Start **song playback** from current order position | All screens except Disk (which has no playback shortcut) |
 | SHIFT + B | **Enter selection mode** | Like M8 SHIFT+OPTION (Pattern view only) |
 | SHIFT + A | **Paste** clipboard at cursor | Like M8 SHIFT+EDIT |
 
-### 2.3 Pattern Screen — Inside Mode (LSDJ A-held editing)
+### 2.3 Pattern Screen -- Inside Mode (LSDJ A-held editing)
 
 A is always "do something" (place, adjust). B is always "clear/delete" (never
-navigation). There is no "edit mode" toggle — holding A while pressing d-pad
+navigation). There is no "edit mode" toggle; holding A while pressing d-pad
 adjusts values live. The action happens on A **release**: if d-pad was used
 while A was held, it was an edit (no stamp). If A was tapped without d-pad,
 it stamps.
@@ -114,21 +114,21 @@ to move to the next row manually.
 | **Y + UP/DOWN** | Change octave |
 | **Y + LEFT/RIGHT** | Change current instrument |
 
-### 2.4 Pattern Screen — Overview Mode (like LSDJ Song/Chain navigation)
+### 2.4 Pattern Screen -- Overview Mode (like LSDJ Song/Chain navigation)
 
 | Combo | Action |
 |-------|--------|
 | **SELECT+RIGHT** | Enter inside mode on selected channel |
 | **D-pad UP/DOWN** | Move cursor row (by step size) |
 | **D-pad LEFT/RIGHT** | Move cursor between channels |
-| **L / R** | Switch channel group (1-8 → 9-16 → ...) |
+| **L / R** | Switch channel group (1-8 -> 9-16 -> ...) |
 | **X + UP/DOWN** | Page up/down |
 | **X + LEFT/RIGHT** | Change step size |
 | **Y + UP/DOWN** | Change octave |
 | **Y + LEFT/RIGHT** | Change instrument |
 | **START** | Play / stop |
 
-### 2.5 Song Screen (Order Table — like LSDJ Song screen)
+### 2.5 Song Screen (Order Table -- like LSDJ Song screen)
 
 | Combo | Action |
 |-------|--------|
@@ -137,7 +137,7 @@ to move to the next row manually.
 | **A** | Jump to pattern editor at selected position (same as SELECT+RIGHT) |
 | **Y + A** | Insert order entry (duplicate current) |
 | **Y + B** | Delete order entry |
-| **L / R** | Quick order skip (±8 positions) |
+| **L / R** | Quick order skip (+/-8 positions) |
 
 ---
 
@@ -201,18 +201,18 @@ between screens -- only SELECT+direction.
 The pattern screen uses a **hybrid classic-tracker / LSDJ** approach with two
 distinct viewing modes:
 
-- **Overview mode** — classic tracker look. Shows 8 channels at once with a
+- **Overview mode** -- classic tracker look. Shows 8 channels at once with a
   compact note+instrument preview per channel. You can **navigate** (move the
   cursor to any row/channel) but **cannot directly edit** cell data. This gives
   you the big-picture view of what is happening across all channels.
-- **Inside mode** — LSDJ-style focused editing. Zooms into a single channel,
+- **Inside mode** -- LSDJ-style focused editing. Zooms into a single channel,
   showing all 5 fields (Note, Inst, Vol, Fx, Param) with room for comfortable
   editing. All data entry happens here. Press **A** to enter, **B** to exit.
 
 This hybrid lets you keep the spatial awareness of a classic tracker while
 maintaining the precise, uncluttered editing of an LSDJ-style workflow.
 
-### 4.1 Overview Mode (navigation / preview — default)
+### 4.1 Overview Mode (navigation / preview -- default)
 
 Shows 8 channels at a time. Each channel shows note + instrument. **Read-only**:
 cursor movement only, no data entry. Use this to find where you want to edit,
@@ -250,7 +250,7 @@ Navigation:
 - Y + d-pad left/right: change instrument
 - **A: enter Inside mode** on the selected channel
 
-### 4.2 Inside Mode (editing — LSDJ-style)
+### 4.2 Inside Mode (editing -- LSDJ-style)
 
 Press A on a channel to zoom in. Shows all fields of one channel. **This is
 where all data entry happens.** The cursor moves between sub-columns (Note, Ins,
@@ -280,7 +280,7 @@ Navigation:
 - X + d-pad: page movement / step change (same as overview)
 - Y + d-pad: octave / instrument change (same as overview)
 
-### 4.3 Data Entry (Inside Mode only — A-held editing)
+### 4.3 Data Entry (Inside Mode only -- A-held editing)
 
 There is no "enter edit mode" step. A is always an action key.
 
@@ -304,7 +304,7 @@ There is no "enter edit mode" step. A is always an action key.
 **Volume / Effect / Param columns (columns 2-4):**
 - **A held + UP/DOWN**: Increment/decrement high nibble.
 - **A held + LEFT/RIGHT**: Increment/decrement low nibble.
-  Releasing A finalizes the edit — no confirm step needed.
+  Releasing A finalizes the edit; no confirm step needed.
 - **A** (tap, no d-pad): Advance cursor by step size.
 - **B**: Clear the field (set to 0).
 
@@ -420,7 +420,7 @@ with the help bar in BIG font mode (see `feedback_scaled_offset_drift.md`).
 | `>> Save .wav` | Writes `./data/sample_XX.wav` (XX = 1-based slot). 8-bit samples are upconverted to 16-bit on the fly via `wav_save_mono16` | Two-tap if slot non-empty (overwrite warning) |
 | `>> Rename` | Opens the on-screen QWERTY keyboard (§13) on `s->name` (32 chars max). Cancel restores prior name. | n/a |
 
-**B+A** (two-tap) deletes the selected sample slot — frees PCM, resets all
+**B+A** (two-tap) deletes the selected sample slot: frees PCM, resets all
 fields, and (if playing) calls `playback_rebuild_mas()` to refresh the
 audio engine. Without the two-tap, a stray B+A could free PCM that
 playback or the LFE draft is still dereferencing.
@@ -602,7 +602,7 @@ Touch-drag faders for volume. Tap S/M buttons for solo/mute. L/R to show next 8 
 
 ## 11. Disk Screen
 
-The disk screen is **never** opened directly by the user — there is no
+The disk screen is **never** opened directly by the user; there is no
 SHIFT+START shortcut. It is opened by on-screen action rows in other views,
 each of which sets the global `disk_return_screen` (and, for SAMPLE,
 `sample_load_target`) before transitioning. Exits return to whatever the
@@ -644,7 +644,7 @@ one directory level. **SHIFT+DOWN** also exits.
 
 Shows status messages from the most recent load/save operation. Save and
 Save-As are now performed from the PROJECT view (see §9.4), so the disk
-screen is effectively read-only for the user — file *writes* never happen
+screen is effectively read-only for the user; file *writes* never happen
 from inside it in v1.
 
 ### 11.4 Edge cases
@@ -653,8 +653,8 @@ from inside it in v1.
   user inside it (an earlier bug let B walk above the root and lock the
   user out of the SHIFT+DOWN exit).
 - The browser can show up to `FB_MAX_ENTRIES` entries per directory.
-  Excess entries are silently dropped — known limitation, not documented
-  to the user yet.
+  Excess entries are silently dropped (known limitation, not documented
+  to the user yet).
 
 ---
 
@@ -679,8 +679,8 @@ The pattern grid with 4 channels in overview needs: 4 chars (row) + 4 * (7 chars
 A reusable on-screen QWERTY keyboard for any string entry. Implemented at
 `arm9/source/ui/text_input.{h,c}`. Currently wired to:
 
-- PROJECT view → Song Name row (A opens it on `song.name`)
-- SAMPLE view → `>> Rename` action (A opens it on `s->name`)
+- PROJECT view -> Song Name row (A opens it on `song.name`)
+- SAMPLE view -> `>> Rename` action (A opens it on `s->name`)
 
 ### 13.1 Behavior
 
@@ -708,7 +708,7 @@ returning early from its own handlers, until the keyboard closes itself.
    A:press  B:del  START:ok  SELECT:cancel
 ```
 
-Uppercase only in v1 — lowercase / shift is on the post-v1 list.
+Uppercase only in v1; lowercase / shift is on the post-v1 list.
 
 ### 13.3 Controls
 
@@ -717,10 +717,10 @@ Uppercase only in v1 — lowercase / shift is on the post-v1 list.
 | D-pad | Move cursor between keys (wraps within row, no vertical wrap) |
 | A | Press the highlighted key (append char, or run special action) |
 | B | Quick backspace (shortcut for the DEL key) |
-| START | OK — close, keep edits |
-| SELECT | CANCEL — close, restore the snapshot taken at open time |
+| START | OK -- close, keep edits |
+| SELECT | CANCEL -- close, restore the snapshot taken at open time |
 
-Single instance only — `text_input_open()` is a no-op if a keyboard is
+Single instance only: `text_input_open()` is a no-op if a keyboard is
 already active. The caller's buffer must be writable for `max_len + 1`
 bytes; the widget snapshots up to 64 bytes internally for CANCEL restore.
 

@@ -53,9 +53,9 @@ typedef struct {
 // 4-channel 64-row pattern:        4 +  64* 4*5 =  1,284 bytes
 ```
 
-Patterns are heap-allocated to exactly the size needed for `nrows × ncols` cells. A NULL pattern pointer in the song's pattern table means an empty pattern (all cells are NOTE_EMPTY with no effects). The UI renders empty patterns as blank without needing allocated memory.
+Patterns are heap-allocated to exactly the size needed for `nrows * ncols` cells. A NULL pattern pointer in the song's pattern table means an empty pattern (all cells are NOTE_EMPTY with no effects). The UI renders empty patterns as blank without needing allocated memory.
 
-**Channel-count optimization (in effect):** Allocations honor `song.channel_count` at the time the pattern is created — a 4-channel song's pattern is ~10× smaller than a 32-channel one. Always access cells through the `MT_CELL` macro, never via raw `cells[r][c]`, because the second dimension is `ncols` (per-pattern) not `MT_MAX_CHANNELS`. Patterns allocated under one channel-count and accessed under another would walk out of bounds — see `song_alloc_pattern()` for the allocation API.
+**Channel-count optimization (in effect):** Allocations honor `song.channel_count` at the time the pattern is created; a 4-channel song's pattern is ~10x smaller than a 32-channel one. Always access cells through the `MT_CELL` macro, never via raw `cells[r][c]`, because the second dimension is `ncols` (per-pattern) not `MT_MAX_CHANNELS`. Patterns allocated under one channel-count and accessed under another would walk out of bounds; see `song_alloc_pattern()` for the allocation API.
 
 ### 2.3 MT_EnvelopeNode -- Envelope Node
 

@@ -8,7 +8,7 @@ Parent: [DESIGN.md](../DESIGN.md)
 
 The entry point for working on maxtracker. If you've just cloned the repository (or returned to it after a long absence), start here. This file tells you how to build and run the project, where to read next, and how to make common kinds of changes.
 
-If you want to understand *why* the code is structured the way it is, read [architecture.md](architecture.md). If you're chasing a bug that only happens on real hardware, read [hardware_quirks.md](hardware_quirks.md). If you're worried you might be writing code in a style the project doesn't follow, read [conventions.md](conventions.md). The four files are designed to be read in any order, but if you're truly cold on the project, do them in this order: this file, then `architecture.md`, then `hardware_quirks.md`, then `conventions.md`.
+If you want to understand *why* the code is structured the way it is, read [architecture.md](architecture.md). If you're chasing a bug that only happens on real hardware, read [hardware_quirks.md](hardware_quirks.md). If you're worried you might be writing code in a style the project doesn't follow, read [conventions.md](conventions.md). The four files are designed to be read in any order, but if you're cold on the project, do them in this order: this file, then `architecture.md`, then `hardware_quirks.md`, then `conventions.md`.
 
 ---
 
@@ -16,7 +16,7 @@ If you want to understand *why* the code is structured the way it is, read [arch
 
 A music tracker for the Nintendo DS, in the tradition of LSDJ, M8, and Piggy Tracker. It edits and plays maxmod `.mas` files natively. Songs are kept in memory as a flat editable model and serialized to `.mas` only on save, which means edits are audible immediately during playback without a re-encode. The audio engine is a patched maxmod running on the DS's ARM7, talking to the editor on ARM9 through shared memory.
 
-The vision document is `DESIGN.md` in the repository root. Read its sections 1, 2, and 3 if you've never seen the project before — they cover the goals, the platform constraints, and the high-level architecture choice (the maxmod patch, the cross-CPU split, the LSDJ-style navigation model).
+The vision document is `DESIGN.md` in the repository root. Read its sections 1, 2, and 3 if you've never seen the project before; they cover the goals, the platform constraints, and the high-level architecture choice (the maxmod patch, the cross-CPU split, the LSDJ-style navigation model).
 
 ---
 
@@ -33,7 +33,7 @@ You will need:
 You do not need:
 
 - A separate maxmod install. The patched maxmod source is included as a submodule under `lib/maxmod/`. The build system compiles it from source.
-- A symbolic debugger. There is no production debugger for the running NDS that handles cross-CPU code well. The debugging conventions are in [hardware_quirks.md § 17](hardware_quirks.md) — basically `iprintf` and shared-memory tracing.
+- A symbolic debugger. There is no production debugger for the running NDS that handles cross-CPU code well. The debugging conventions are in [hardware_quirks.md § 17](hardware_quirks.md): `iprintf` and shared-memory tracing.
 
 ---
 
@@ -55,12 +55,12 @@ In practice you'll use three of these:
 
 **`make native`** for testing on hardware. Produces `release/maxtracker.nds` *without* embedded data. Copy it to your flashcart along with a `data/` directory containing whatever sample songs you want. The build is otherwise identical to `emulator`.
 
-**`make host-test`** for fast iteration on logic. Compiles the host test binary in `test/maxtracker_tests` and runs it. This is the fastest feedback loop in the project — under a second from edit to test result on a typical machine, no emulator required. Use this whenever you change `song.c`, `clipboard.c`, `undo.c`, `mas_load.c`, `mas_write.c`, `scale.c`, or `test.c`. See section 5 for more on the test suite.
+**`make host-test`** for fast iteration on logic. Compiles the host test binary in `test/maxtracker_tests` and runs it. This is the fastest feedback loop in the project: under a second from edit to test result on a typical machine, no emulator required. Use this whenever you change `song.c`, `clipboard.c`, `undo.c`, `mas_load.c`, `mas_write.c`, `scale.c`, or `test.c`. See section 5 for more on the test suite.
 
 A few build details that aren't obvious:
 
 - `make clean` removes everything including the maxmod build artifacts. After a clean, the next build will recompile maxmod, which adds 30+ seconds. If you only want to rebuild maxtracker code, run `make -C arm9 clean && make -C arm7 clean && make emulator`.
-- The `make test` target builds an NDS ROM that runs the unit tests on boot using `consoleDemoInit()`. It's the on-device counterpart to `host-test` and exists for testing things that can't run on the host (currently nothing — the ROM just prints "no tests yet"). Most testing should use `host-test`.
+- The `make test` target builds an NDS ROM that runs the unit tests on boot using `consoleDemoInit()`. It's the on-device counterpart to `host-test` and exists for testing things that can't run on the host (currently nothing; the ROM just prints "no tests yet"). Most testing should use `host-test`.
 - The `EXTRA_CFLAGS="-DUNIT_TESTING"` flag is what activates the on-device test mode. If you ever want a one-off debug build, you can pass `EXTRA_CFLAGS=-DSOMETHING` to `make -C arm9` directly.
 - After making cross-CPU IPC changes (anything in `mt_shared.h`, `playback.c`, `arm7/source/main.c`), you must rebuild *both* CPUs from clean, otherwise the two halves can disagree about the shared struct layout. `make clean && make emulator` is the safe option.
 
@@ -72,7 +72,7 @@ A few build details that aren't obvious:
 
 Drop `release/maxtracker.nds` into melonDS and run it. The first screen is the pattern editor. Pull up the controls reference (`doc/ui_ux.md` or just experiment) for navigation. The bottom screen shows context-sensitive hints.
 
-melonDS is fast enough that you'll see more or less real-world frame rates. Audio works. SD card emulation is on by default and works for most operations. **What melonDS will not catch** is documented in [hardware_quirks.md § 14](hardware_quirks.md) — short version: cache-coherency bugs, FIFO timing races, VRAM 8-bit write violations, and libfat init order issues all reproduce on hardware but not in melonDS.
+melonDS is fast enough that you'll see more or less real-world frame rates. Audio works. SD card emulation is on by default and works for most operations. **What melonDS will not catch** is documented in [hardware_quirks.md § 14](hardware_quirks.md). Short version: cache-coherency bugs, FIFO timing races, VRAM 8-bit write violations, and libfat init order issues all reproduce on hardware but not in melonDS.
 
 ### On hardware
 
@@ -101,10 +101,10 @@ There are two test infrastructures in this project, and they cover different thi
 
 Located in `test/`, built with `make host-test`. Compiles four binaries:
 
-- **`maxtracker_tests`** — The main unit test runner. Links the host shim layer (`nds_shim.h`, `memtrack_stub.c`) with the pure-logic modules (`song.c`, `clipboard.c`, `undo.c`, `scale.c`, `mas_write.c`, `mas_load.c`) and the test harness in `arm9/source/test/test.c`. Runs ~50 test groups covering song initialization, clipboard operations, undo ring behavior, MAS roundtrip, instrument-sample mapping, panning encoding, groove tables, and scale navigation. As of this writing it produces 666 assertions.
-- **`mas_diff`** — A roundtrip validation tool. Loads a `.mas` file, serializes it back, and byte-compares the result against the original. Used to catch any encoding regression in `mas_write.c` or decoding regression in `mas_load.c`.
-- **`playback_cmp`** — A tick-by-tick playback comparison tool. Compiles the maxmod engine on the host alongside `engine_stubs.c`, runs the same `.mas` file through both the original RLE pattern reader and the patched flat-cell reader, and asserts they produce identical engine state at every tick.
-- **`reader_cmp`** — Similar to `playback_cmp` but focused on the pattern reader's flag computation alone, not the full engine.
+- **`maxtracker_tests`** -- The main unit test runner. Links the host shim layer (`nds_shim.h`, `memtrack_stub.c`) with the pure-logic modules (`song.c`, `clipboard.c`, `undo.c`, `scale.c`, `mas_write.c`, `mas_load.c`) and the test harness in `arm9/source/test/test.c`. Runs ~50 test groups covering song initialization, clipboard operations, undo ring behavior, MAS roundtrip, instrument-sample mapping, panning encoding, groove tables, and scale navigation. As of this writing it produces 666 assertions.
+- **`mas_diff`** -- A roundtrip validation tool. Loads a `.mas` file, serializes it back, and byte-compares the result against the original. Used to catch any encoding regression in `mas_write.c` or decoding regression in `mas_load.c`.
+- **`playback_cmp`** -- A tick-by-tick playback comparison tool. Compiles the maxmod engine on the host alongside `engine_stubs.c`, runs the same `.mas` file through both the original RLE pattern reader and the patched flat-cell reader, and asserts they produce identical engine state at every tick.
+- **`reader_cmp`** -- Similar to `playback_cmp` but focused on the pattern reader's flag computation alone, not the full engine.
 
 Run them with:
 
@@ -143,7 +143,7 @@ Then add `MT_RUN(test_my_thing);` near the bottom of `mt_test_run_all()`. The ne
 
 Tests should be deterministic, fast (under 10 ms each), and self-contained (set up state, exercise behavior, tear down). Avoid tests that depend on the order of other tests, on the file system, or on any external state. When you need to test loading or saving, the test shims handle the relevant FIFO/cache stubs but you still write to a real path; use the `TEST_MAS_PATH_*` constants in `test.c` so paths are consistent.
 
-If your test doesn't fit cleanly into the existing harness — say, you need a more complex differential check between two implementations — model it on `playback_cmp.c` or `mas_diff.c` rather than shoehorning it into `test.c`. Add a new target to `test/Makefile` for it.
+If your test doesn't fit cleanly into the existing harness (say, you need a more complex differential check between two implementations), model it on `playback_cmp.c` or `mas_diff.c` rather than shoehorning it into `test.c`. Add a new target to `test/Makefile` for it.
 
 ---
 
@@ -151,15 +151,15 @@ If your test doesn't fit cleanly into the existing harness — say, you need a m
 
 Once you've built the project and run it, the recommended reading order for understanding the code is:
 
-1. **`DESIGN.md` § 3 (Architecture Overview)** — the ASCII diagram and the "Option B (patched maxmod)" decision. This gives you the cross-CPU model in 200 words.
-2. **`doc/architecture.md`** — the full code-level architecture. Read sections 1 through 8 carefully; sections 9 through 14 are reference material you can skim.
-3. **`arm9/source/core/main.c`** — the entry point. Read `main()` first (around line 1189) for the init sequence, then the frame loop (around line 1273) for the dispatch shape. Don't try to read the input handlers yet; they're 800+ lines and don't make sense until you know the data model.
-4. **`arm9/source/core/song.h`** — the data model. Skim the type definitions (`MT_Cell`, `MT_Pattern`, `MT_Instrument`, `MT_Sample`, `MT_Song`).
-5. **`arm9/source/ui/editor_state.h`** — the editor cursor. This is the second piece of state every view reads.
-6. **`include/mt_shared.h` and `include/mt_ipc.h`** — the cross-CPU contract.
-7. **`arm9/source/core/playback.c`** — ARM9's audio shim. The interesting functions are `playback_play`, `playback_stop`, `playback_update`, `playback_detach_pattern`, `playback_reattach_pattern`, and `get_uncached_shared`.
-8. **`arm7/source/main.c`** — ARM7's entire ARM7-side code. It's small. Read `mt_EventCallback`, the FIFO handlers, and the main loop.
-9. **`doc/hardware_quirks.md`** — at this point the rules will make sense.
+1. **`DESIGN.md` § 3 (Architecture Overview)** -- the ASCII diagram and the "Option B (patched maxmod)" decision. This gives you the cross-CPU model in 200 words.
+2. **`doc/architecture.md`** -- the full code-level architecture. Read sections 1 through 8 carefully; sections 9 through 14 are reference material you can skim.
+3. **`arm9/source/core/main.c`** -- the entry point. Read `main()` first (around line 1189) for the init sequence, then the frame loop (around line 1273) for the dispatch shape. Don't try to read the input handlers yet; they're 800+ lines and don't make sense until you know the data model.
+4. **`arm9/source/core/song.h`** -- the data model. Skim the type definitions (`MT_Cell`, `MT_Pattern`, `MT_Instrument`, `MT_Sample`, `MT_Song`).
+5. **`arm9/source/ui/editor_state.h`** -- the editor cursor. This is the second piece of state every view reads.
+6. **`include/mt_shared.h` and `include/mt_ipc.h`** -- the cross-CPU contract.
+7. **`arm9/source/core/playback.c`** -- ARM9's audio shim. The interesting functions are `playback_play`, `playback_stop`, `playback_update`, `playback_detach_pattern`, `playback_reattach_pattern`, and `get_uncached_shared`.
+8. **`arm7/source/main.c`** -- ARM7's entire ARM7-side code. It's small. Read `mt_EventCallback`, the FIFO handlers, and the main loop.
+9. **`doc/hardware_quirks.md`** -- at this point the rules will make sense.
 
 Then pick one feature you want to add or one bug you want to chase, and let curiosity drive the rest.
 
@@ -167,7 +167,7 @@ Then pick one feature you want to add or one bug you want to chase, and let curi
 
 ## 7. How to make common changes
 
-A few recipes for things that come up often. These are not exhaustive — they're starting points so you don't have to reverse-engineer the convention from scratch.
+A few recipes for things that come up often. These are not exhaustive; they're starting points so you don't have to reverse-engineer the convention from scratch.
 
 ### Adding a new screen
 
@@ -175,18 +175,18 @@ A new top-level UI mode (like `SCREEN_INSTRUMENT`, `SCREEN_MIXER`, etc.) is abou
 
 1. Add an enum entry to `ScreenMode` in `arm9/source/ui/screen.h`. Put it before `SCREEN_COUNT`.
 2. Create `arm9/source/ui/your_view.h` with prototypes for `your_view_input(u32 keys_down, u32 keys_held)` and `your_view_draw(u8 *top_fb, u8 *bot_fb)`. Follow the existing view headers for naming.
-3. Create `arm9/source/ui/your_view.c`. Include `editor_state.h` if you need the cursor, `song.h` if you need the model, `screen.h` and `font.h` for rendering primitives. Implement the input handler to mutate cursor/song based on buttons. Implement the draw function as a pure read-only function that builds the framebuffer from current state. **If your view mutates `song.*` state, set `song_modified = true; autosave_dirty = true;` at every mutation site** — autosave depends on it, and missed sites silently lose work. Both flags are externs from `main.c`. (A `mt_song_modified()` helper is on the post-v1 list to make this structurally enforceable.)
-4. Add a case to the dispatch switch in `arm9/source/core/main.c` `main()`'s frame loop. Follow the existing pattern: call `navigation_handle_shift(kd, kh)` first (returns true if SELECT-modifier handled the input), then your `your_view_input`, then your `your_view_draw`. Always guard the draw with `if (current_screen == SCREEN_X)` — the input handler may have transitioned away from your screen, and drawing stale view content over the new screen is a classic regression here.
-5. Add navigation transitions wherever the new screen should be reachable from. Most screens are reached via `SELECT + direction` combos handled in `navigation.c`. If the new screen is reached from a specific other screen via an on-screen action (the modern pattern — see PROJECT and SAMPLE views), add the transition in that view's input handler.
+3. Create `arm9/source/ui/your_view.c`. Include `editor_state.h` if you need the cursor, `song.h` if you need the model, `screen.h` and `font.h` for rendering primitives. Implement the input handler to mutate cursor/song based on buttons. Implement the draw function as a pure read-only function that builds the framebuffer from current state. **If your view mutates `song.*` state, set `song_modified = true; autosave_dirty = true;` at every mutation site** because autosave depends on it, and missed sites silently lose work. Both flags are externs from `main.c`. (A `mt_song_modified()` helper is on the post-v1 list to make this structurally enforceable.)
+4. Add a case to the dispatch switch in `arm9/source/core/main.c` `main()`'s frame loop. Follow the existing pattern: call `navigation_handle_shift(kd, kh)` first (returns true if SELECT-modifier handled the input), then your `your_view_input`, then your `your_view_draw`. Always guard the draw with `if (current_screen == SCREEN_X)` because the input handler may have transitioned away from your screen, and drawing stale view content over the new screen is a classic regression here.
+5. Add navigation transitions wherever the new screen should be reachable from. Most screens are reached via `SELECT + direction` combos handled in `navigation.c`. If the new screen is reached from a specific other screen via an on-screen action (the modern pattern; see PROJECT and SAMPLE views), add the transition in that view's input handler.
 6. Build with `make emulator` and test. The Makefile globs `source/ui/*.c` so you don't need to edit it.
 
-**Font-mode safety**: SMALL is 64×32, BIG is 42×24. Anchor any near-footer content to `font_scale_row(30)` (help) and `font_scale_row(31)` (transport), and never compute rows as `font_scale_row(N) + K` with an unscaled offset — that drifts into the footer strip in BIG mode. See `memory/feedback_scaled_offset_drift.md` for the bug class and `sample_view.c`'s action-row anchoring for the fix pattern.
+**Font-mode safety**: SMALL is 64x32, BIG is 42x24. Anchor any near-footer content to `font_scale_row(30)` (help) and `font_scale_row(31)` (transport), and never compute rows as `font_scale_row(N) + K` with an unscaled offset, which drifts into the footer strip in BIG mode. See `memory/feedback_scaled_offset_drift.md` for the bug class and `sample_view.c`'s action-row anchoring for the fix pattern.
 
 The view should not have its own `_init()` function; immediate-mode views don't have setup. If you find yourself wanting one, the state belongs on the cursor or in a file-scope static.
 
 ### Adding a string-entry field (reuse the on-screen QWERTY)
 
-Don't roll a custom text editor — use the `text_input` modal at `arm9/source/ui/text_input.{h,c}`. It handles the whole keyboard, snapshot-on-open, and CANCEL restore for you.
+Don't roll a custom text editor. Use the `text_input` modal at `arm9/source/ui/text_input.{h,c}`. It handles the whole keyboard, snapshot-on-open, and CANCEL restore for you.
 
 1. `#include "text_input.h"` in your view.
 2. At the top of your `_input` function, before any of your own logic:
@@ -211,7 +211,7 @@ Don't roll a custom text editor — use the `text_input` modal at `arm9/source/u
 
 Steps 2 and 3 are easy to forget. Missing the input forward presents as a frozen modal (you can see the keyboard but can't type); missing the draw forward presents as the keyboard appearing only for one frame. If you observe either, check both forwards.
 
-For destructive action prompts (delete / overwrite / discard), don't open a modal — use the in-row two-tap confirm pattern from `instrument_view.c` and `sample_view.c` (a `*_confirm_pending` bool, prompt rendered on the transport row, second tap commits, B or any unrelated key cancels).
+For destructive action prompts (delete / overwrite / discard), don't open a modal. Use the in-row two-tap confirm pattern from `instrument_view.c` and `sample_view.c` (a `*_confirm_pending` bool, prompt rendered on the transport row, second tap commits, B or any unrelated key cancels).
 
 ### Opening the disk browser from a new view
 
@@ -236,10 +236,10 @@ The disk browser is reached only via on-screen actions; the SHIFT+START shortcut
 
 See `pv_open_load_browser` in `project_view.c` and `sv_open_load_browser` in `sample_view.c` for the canonical examples. The full convention is documented in `architecture.md § 9b`.
 
-### Adding a new IPC command (ARM9 → ARM7)
+### Adding a new IPC command (ARM9 -> ARM7)
 
-1. Add the opcode to `include/mt_ipc.h`. Pick a free value in the ARM9→ARM7 range (currently `0x01` through `0x0B` are taken).
-2. Add a handler case in `arm7/source/main.c` `mt_ValueHandler`. The handler should set a static volatile flag and capture any parameters into static volatile variables. **Do not do real work in the handler** — see [hardware_quirks.md § 7](hardware_quirks.md).
+1. Add the opcode to `include/mt_ipc.h`. Pick a free value in the ARM9->ARM7 range (currently `0x01` through `0x0B` are taken).
+2. Add a handler case in `arm7/source/main.c` `mt_ValueHandler`. The handler should set a static volatile flag and capture any parameters into static volatile variables. **Do not do real work in the handler**; see [hardware_quirks.md § 7](hardware_quirks.md).
 3. Add code to drain the flag in ARM7's main loop. Look at how `pending_play`, `pending_stop`, and `pending_preview` are handled.
 4. Add a sender wrapper in `arm9/source/core/playback.c` (or wherever the ARM9 caller lives). The sender does:
    ```c
@@ -262,7 +262,7 @@ Most effect work is in the song model and serializers. The audio engine itself i
 
 1. Add the field to the relevant struct in `arm9/source/core/song.h` (`MT_Instrument`, `MT_Sample`, `MT_Cell`, etc.).
 2. Initialize the field in `song_init()` if needed.
-3. Update `arm9/source/io/mas_write.c` to serialize the field. Match mmutil's encoding exactly — see [hardware_quirks.md § 8](hardware_quirks.md). The host test `mas_diff` will catch any mismatch.
+3. Update `arm9/source/io/mas_write.c` to serialize the field. Match mmutil's encoding exactly; see [hardware_quirks.md § 8](hardware_quirks.md). The host test `mas_diff` will catch any mismatch.
 4. Update `arm9/source/io/mas_load.c` to deserialize the field. The two sides must use the same field order, the same byte width, and the same endianness convention.
 5. Update the instrument view (`instrument_view.c`) or pattern view (`pattern_view.c`) to expose the new field for editing.
 6. Add a host test that exercises the field: set it, save, load, check it matches.
@@ -291,24 +291,24 @@ If the format is large (megabytes), consider streaming rather than loading the w
 
 There is no symbolic debugger that handles the cross-CPU NDS architecture well. The debugging tools you have are:
 
-**`iprintf`** — Print to a console. Requires `consoleDemoInit()` mode, which conflicts with the bitmap framebuffer the editor normally uses. Useful for one-off debugging when you're already in a state where you can swap out the UI temporarily (or for a build like `make test` that runs in console mode anyway).
+**`iprintf`** -- Print to a console. Requires `consoleDemoInit()` mode, which conflicts with the bitmap framebuffer the editor normally uses. Useful for one-off debugging when you're already in a state where you can swap out the UI temporarily (or for a build like `make test` that runs in console mode anyway).
 
-**Shared-memory tracing** — Add a logging field (a counter, a most-recent-value, etc.) to `MT_SharedPatternState`, write it from ARM7 in the place you want to observe, read it from ARM9 through the uncached mirror in the next frame, and display the value somewhere on screen. This is the standard technique for ARM7-side debugging because there's no other reliable way to get a value out of ARM7 in real time.
+**Shared-memory tracing** -- Add a logging field (a counter, a most-recent-value, etc.) to `MT_SharedPatternState`, write it from ARM7 in the place you want to observe, read it from ARM9 through the uncached mirror in the next frame, and display the value somewhere on screen. This is the standard technique for ARM7-side debugging because there's no other reliable way to get a value out of ARM7 in real time.
 
-**Host tests** — For any logic that doesn't depend on hardware, write a host test instead of debugging on-device. The feedback loop is 100x faster.
+**Host tests** -- For any logic that doesn't depend on hardware, write a host test instead of debugging on-device. The feedback loop is 100x faster.
 
-**`playback_cmp` and `mas_diff`** — For audio engine and serialization bugs, these tools tell you exactly which tick or byte diverges, which is much faster than guessing.
+**`playback_cmp` and `mas_diff`** -- For audio engine and serialization bugs, these tools tell you exactly which tick or byte diverges, which is much faster than guessing.
 
-**melonDS GDB stub** — melonDS has a GDB integration. It works for ARM9-only bugs but is unreliable for cross-CPU code because melonDS's memory model is more lenient than hardware. Useful for "the editor crashed in this function" but not for "the audio glitches sometimes".
+**melonDS GDB stub** -- melonDS has a GDB integration. It works for ARM9-only bugs but is unreliable for cross-CPU code because melonDS's memory model is more lenient than hardware. Useful for "the editor crashed in this function" but not for "the audio glitches sometimes".
 
-**no$gba** — The closest emulator to real hardware. If a bug only reproduces on hardware and you're trying to chase it without going to a flashcart every iteration, no$gba is your best bet.
+**no$gba** -- The closest emulator to real hardware. If a bug only reproduces on hardware and you're trying to chase it without going to a flashcart every iteration, no$gba is your best bet.
 
 The general debugging workflow for a hardware-only bug is:
 
 1. Reproduce in melonDS first to make sure you have a clean repro (most bugs reproduce in both).
 2. If it doesn't reproduce in melonDS, check no$gba.
 3. If it still doesn't reproduce, you're in real-hardware-only territory. Add a logging field to shared state, instrument the suspected code path, capture the symptom on hardware, read the log on the next melonDS run.
-4. Form a hypothesis. Check the hypothesis against [hardware_quirks.md](hardware_quirks.md) — most cross-CPU bugs are one of those rules being violated.
+4. Form a hypothesis. Check the hypothesis against [hardware_quirks.md](hardware_quirks.md); most cross-CPU bugs are one of those rules being violated.
 5. Fix it, rebuild *both* CPUs from clean, retest on hardware.
 
 ---
@@ -414,11 +414,11 @@ In rough priority order:
 
 A few things on the project's future-work list, captured here so you don't reinvent them.
 
-- **Splitting `main.c`** — currently 1500+ lines. Will become `scene_manager.c` + `input_router.c` + a much smaller `main.c` once the project becomes a proper repository. See [architecture.md § 13](architecture.md).
-- **A UI/core facade** — UI views currently call into `playback.c` and read `song.*` directly. A facade layer would centralize these calls. Not urgent at the current size; would help if multiple editor instances ever become a thing (e.g. for headless testing).
-- **Per-file documentation** — `doc/module_reference.md` is planned for a future doc pass. The high-level architecture is documented here and in [architecture.md](architecture.md), but per-file detail is not.
-- **Effect-encoding test coverage** — `mas_diff` catches roundtrip mismatches but doesn't check that specific effects produce specific audio results. A targeted test would help.
-- **Hardware test on-device suite** — `make test` builds an on-device test runner that currently has no tests in it. VRAM rendering, FIFO timing, and audio output are the obvious candidates.
+- **Splitting `main.c`** -- currently 1500+ lines. Will become `scene_manager.c` + `input_router.c` + a much smaller `main.c` once the project becomes a proper repository. See [architecture.md § 13](architecture.md).
+- **A UI/core facade** -- UI views currently call into `playback.c` and read `song.*` directly. A facade layer would centralize these calls. Not urgent at the current size; would help if multiple editor instances ever become a thing (e.g. for headless testing).
+- **Per-file documentation** -- `doc/module_reference.md` is planned for a future doc pass. The high-level architecture is documented here and in [architecture.md](architecture.md), but per-file detail is not.
+- **Effect-encoding test coverage** -- `mas_diff` catches roundtrip mismatches but doesn't check that specific effects produce specific audio results. A targeted test would help.
+- **Hardware test on-device suite** -- `make test` builds an on-device test runner that currently has no tests in it. VRAM rendering, FIFO timing, and audio output are the obvious candidates.
 
 ---
 
