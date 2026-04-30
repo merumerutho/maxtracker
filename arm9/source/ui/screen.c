@@ -24,6 +24,10 @@
 #include "screen.h"
 #include "font.h"
 #include "pattern_view.h"
+#include "text_input.h"
+#include "instrument_view.h"
+#include "sample_view.h"
+#include "project_view.h"
 #include <string.h>
 
 /* Shadow framebuffers: the buffers drawing code targets. 32-byte aligned
@@ -130,6 +134,10 @@ void screen_init(void)
 void screen_set_mode(ScreenMode mode)
 {
     if (mode >= SCREEN_COUNT) return;
+    text_input_cancel();
+    instrument_view_reset_transient();
+    sample_view_reset_transient();
+    project_view_reset_transient();
     current_screen = mode;
     /* Clear bottom shadow on mode switch — top is always pattern grid. */
     font_clear(bot_fb, PAL_BG);

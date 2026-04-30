@@ -57,6 +57,12 @@ static struct {
 #define SV_ACTION_SAVE    1
 #define SV_ACTION_RENAME  2
 
+void sample_view_reset_transient(void)
+{
+    sv.confirm_pending = false;
+    sv.delete_confirm_pending = false;
+}
+
 void sample_view_set_selected(u8 index)
 {
     if (index < MT_MAX_SAMPLES) {

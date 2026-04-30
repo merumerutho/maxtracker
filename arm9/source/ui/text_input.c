@@ -191,6 +191,11 @@ bool text_input_is_active(void)
     return ti.active;
 }
 
+void text_input_cancel(void)
+{
+    if (ti.active) close_cancel();
+}
+
 void text_input_input(u32 down, u32 held)
 {
     (void)held;

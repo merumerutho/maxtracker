@@ -24,4 +24,7 @@ void sample_view_draw(u8 *top_fb, u8 *bot_fb);
 /* Process button input */
 void sample_view_input(u32 down, u32 held);
 
+/* Clear confirmation flags that shouldn't survive screen transitions. */
+void sample_view_reset_transient(void);
+
 #endif /* MT_SAMPLE_VIEW_H */

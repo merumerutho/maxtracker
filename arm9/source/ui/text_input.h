@@ -47,6 +47,10 @@ void text_input_open(char *buf, size_t max_len, const char *title);
 /* True while the keyboard is capturing input. */
 bool text_input_is_active(void);
 
+/* Force-close the keyboard with CANCEL semantics (restore snapshot).
+ * Safe to call when inactive — no-op in that case. */
+void text_input_cancel(void);
+
 /* Feed one frame's worth of key input. */
 void text_input_input(u32 down, u32 held);
 

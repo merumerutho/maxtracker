@@ -114,6 +114,11 @@ static struct {
     u8   name_edit_pos;     /* cursor position within name string      */
 } pv_state;
 
+void project_view_reset_transient(void)
+{
+    pv_state.confirm_pending = false;
+}
+
 /* Viewport for the param list. Height is recomputed each frame from
  * font_scale_row so it shrinks correctly in BIG mode (where the 32-row
  * SMALL grid maps to 24 rows). margin=2 keeps two rows of context

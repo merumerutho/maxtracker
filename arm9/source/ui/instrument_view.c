@@ -82,6 +82,13 @@ static struct {
     .drag_node = -1
 };
 
+void instrument_view_reset_transient(void)
+{
+    iv_state.delete_confirm_pending = false;
+    iv_state.drag_node = -1;
+    iv_state.tap_timer = 0;
+}
+
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
