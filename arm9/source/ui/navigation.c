@@ -340,11 +340,11 @@ bool navigation_handle_shift(u32 down, u32 held)
             if (pat && clipboard_has_block()) {
                 u8 pi = editor_get_current_pattern_idx();
                 u16 paste_rows = clipboard.cell_rows;
-                u8  paste_ch   = clipboard.cell_channels;
-                u8 end_row = cursor.row + paste_rows - 1;
-                u8 end_ch  = cursor.channel + paste_ch - 1;
+                u16 paste_ch   = clipboard.cell_channels;
+                u16 end_row = cursor.row + paste_rows - 1;
+                u16 end_ch  = cursor.channel + paste_ch - 1;
                 if (end_row >= pat->nrows) end_row = pat->nrows - 1;
-                if (end_ch >= pat->ncols - 1) end_ch = pat->ncols - 1;
+                if (end_ch >= pat->ncols) end_ch = pat->ncols - 1;
                 undo_push_block(pi, cursor.row, end_row, cursor.channel, end_ch);
                 clipboard_paste(pat, cursor.row, cursor.channel);
                 mt_mark_song_modified();
