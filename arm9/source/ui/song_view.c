@@ -18,6 +18,7 @@
 #include "editor_state.h"
 #include "playback.h"
 #include "scroll_view.h"
+#include "keybind.h"
 
 /* ---- Externs from main.c ---- */
 extern char status_msg[64];
@@ -77,7 +78,7 @@ void song_view_input(u32 down, u32 held)
 
     /* -- Selection mode: B = copy, B+A = cut -- */
     if (cursor.selecting) {
-        if ((held & KEY_B) && (down & KEY_A)) {
+        if ((held & MT_KEY_BACK) && (down & MT_KEY_CONFIRM)) {
             /* Cut: copy then delete */
             u8 r0 = cursor.sel_start_row;
             u8 r1 = cursor.order_pos;
@@ -99,7 +100,7 @@ void song_view_input(u32 down, u32 held)
             status_timer = 90;
             return;
         }
-        if (down & KEY_B) {
+        if (down & MT_KEY_BACK) {
             /* Copy selection to clipboard */
             u8 r0 = cursor.sel_start_row;
             u8 r1 = cursor.order_pos;
@@ -123,7 +124,7 @@ void song_view_input(u32 down, u32 held)
     }
 
     /* -- B+A: delete single order entry at cursor -- */
-    if ((held & KEY_B) && (down & KEY_A)) {
+    if ((held & MT_KEY_BACK) && (down & MT_KEY_CONFIRM)) {
         if (song.order_count > 1 && cursor.order_pos < song.order_count) {
             for (int i = cursor.order_pos; i < song.order_count - 1; i++)
                 song.orders[i] = song.orders[i + 1];
@@ -137,7 +138,7 @@ void song_view_input(u32 down, u32 held)
     }
 
     /* -- B modifier: warp navigation (B+UP/DOWN jumps 16 positions) -- */
-    if (held & KEY_B) {
+    if (held & MT_KEY_BACK) {
         if (rep & KEY_UP) {
             if (cursor.order_pos >= 16)
                 cursor.order_pos -= 16;
@@ -155,7 +156,7 @@ void song_view_input(u32 down, u32 held)
     }
 
     /* -- Y: insert new empty pattern row at cursor -- */
-    if (down & KEY_Y) {
+    if (down & MT_KEY_MOD_SECONDARY) {
         u16 new_pat = find_unused_pattern();
         if (new_pat < MT_MAX_PATTERNS) {
             song_alloc_pattern((u8)new_pat, 64, song.channel_count);
@@ -172,8 +173,8 @@ void song_view_input(u32 down, u32 held)
     }
 
     /* -- A modifier: edit pattern number at cursor -- */
-    if (held & KEY_A) {
-        if (down & KEY_A) {
+    if (held & MT_KEY_CONFIRM) {
+        if (down & MT_KEY_CONFIRM) {
             if (cursor.order_pos >= song.order_count ||
                 song.orders[cursor.order_pos] == ORDER_EMPTY) {
                 u16 new_pat = find_unused_pattern();

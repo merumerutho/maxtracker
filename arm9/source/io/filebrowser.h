@@ -81,7 +81,7 @@ void filebrowser_draw(FileBrowser *fb, u8 *framebuf);
  * filebrowser_input — Handle d-pad and button input.
  *
  * @param fb    Browser state.
- * @param down  Button mask from keysDown() (KEY_UP, KEY_DOWN, KEY_A, KEY_B, etc.)
+ * @param down  Button mask from keysDown() (KEY_UP, KEY_DOWN, MT_KEY_CONFIRM, etc.)
  *
  * @return  true if user selected a file (A on a non-directory entry).
  */

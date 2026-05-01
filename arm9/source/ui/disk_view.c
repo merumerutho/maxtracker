@@ -28,6 +28,7 @@
 #include "mas_write.h"
 #include "wav_load.h"
 #include "wav_save.h"
+#include "keybind.h"
 #ifdef MAXTRACKER_LFE
 #include "waveform_view.h"
 #endif
@@ -119,7 +120,7 @@ void disk_view_input(u32 kd, u32 kh)
 
     /* ---- Overwrite-confirm modal ---- */
     if (save_overwrite_pending) {
-        if (kd & KEY_A) {
+        if (kd & MT_KEY_CONFIRM) {
             int err = mt_save_sample_wav(save_overwrite_path,
                                          sample_save_target - 1);
             if (err == WAV_SAVE_OK) {
@@ -138,7 +139,7 @@ void disk_view_input(u32 kd, u32 kh)
             font_clear(bot_fb, PAL_BG);
             return;
         }
-        if (kd & KEY_B) {
+        if (kd & MT_KEY_BACK) {
             save_overwrite_pending = false;
             save_overwrite_path[0] = '\0';
             snprintf(status_msg, sizeof(status_msg),
@@ -150,7 +151,7 @@ void disk_view_input(u32 kd, u32 kh)
     }
 
     /* B at root exits the browser back to the opener. */
-    if ((kd & KEY_B) && filebrowser_at_root(&disk_browser)) {
+    if ((kd & MT_KEY_BACK) && filebrowser_at_root(&disk_browser)) {
         disk_view_cleanup();
         screen_set_mode(disk_return_screen);
         font_clear(top_fb, PAL_BG);
@@ -292,7 +293,7 @@ void disk_view_input(u32 kd, u32 kh)
             }
         }
     }
-    if ((kh & KEY_Y) && (kd & KEY_X)) {
+    if ((kh & MT_KEY_MOD_SECONDARY) && (kd & MT_KEY_MOD_PRIMARY)) {
         /* Y+X = Save-As: find next available numbered filename */
         char sa_path[128];
         int sa_num = 1;
@@ -319,7 +320,7 @@ void disk_view_input(u32 kd, u32 kh)
                      "Save-As: no free slot (01-99)");
         }
         status_timer = 180;
-    } else if (kd & KEY_X) {
+    } else if (kd & MT_KEY_MOD_PRIMARY) {
         int err = mas_write(fs_save_path, &song);
         if (err == 0) {
             snprintf(status_msg, sizeof(status_msg), "Saved OK");

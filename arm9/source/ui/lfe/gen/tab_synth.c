@@ -31,6 +31,9 @@
 #include "lfe_dbmath.h"
 
 #include <nds.h>
+
+#include "keybind.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -441,7 +444,7 @@ WV_ROW_DISPATCH(synth_mod, SYNTH_MOD_PARAMS, SYNTH_MOD_PARAM_COUNT);
 
 static void synth_input(u32 down, u32 held)
 {
-    if (down & KEY_X) { synth_generate(); return; }
+    if (down & MT_KEY_MOD_PRIMARY) { synth_generate(); return; }
     if (sy.subpage == 0)
         wv_handle_row_input(&sy.param_row, SYNTH_PARAM_COUNT, synth_adjs, down, held);
     else

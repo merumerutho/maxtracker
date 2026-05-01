@@ -56,6 +56,8 @@
 
 #include <nds.h>
 
+#include "keybind.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -632,19 +634,19 @@ static void wv_save_input(u32 down, u32 held)
     (void)held;
 
     /* B: cancel save dialog, return to LFE. */
-    if (down & KEY_B) {
+    if (down & MT_KEY_BACK) {
         wv_save_close();
         return;
     }
 
     /* START: save with current folder + filename. */
-    if (down & KEY_START) {
+    if (down & MT_KEY_START) {
         wv_save_do_save();
         return;
     }
 
     /* X: toggle name-editing mode. */
-    if (down & KEY_X) {
+    if (down & MT_KEY_MOD_PRIMARY) {
         wv_save.name_editing = !wv_save.name_editing;
         return;
     }
@@ -685,7 +687,7 @@ static void wv_save_input(u32 down, u32 held)
             }
         }
         /* A in name-edit mode: delete character at cursor (backspace). */
-        if (down & KEY_A) {
+        if (down & MT_KEY_CONFIRM) {
             if (len > 1) {
                 memmove(&wv_save.filename[wv_save.name_cursor],
                         &wv_save.filename[wv_save.name_cursor + 1],
@@ -832,7 +834,7 @@ void waveform_view_input(u32 down, u32 held)
     /* Log only "meaningful" key-down events so we can verify the input
      * dispatch reaches us, without flooding the ring buffer. Skip pure
      * D-pad and X-held parameter nudging (those spam quickly). */
-    u32 log_keys = down & (KEY_A | KEY_B | KEY_START | KEY_L | KEY_R | KEY_TOUCH);
+    u32 log_keys = down & (MT_KEY_CONFIRM | MT_KEY_BACK | MT_KEY_START | MT_KEY_SHOULDER_L | MT_KEY_SHOULDER_R | KEY_TOUCH);
     if (log_keys) {
         dbg_log("wv_input gen=%d down=0x%08lx",
                 (int)wv.current_gen, (unsigned long)down);
@@ -842,7 +844,7 @@ void waveform_view_input(u32 down, u32 held)
      * no matter how many commits have happened. Does NOT touch
      * wv_draft — the user's scratch work is preserved. Must fire
      * BEFORE the plain-B back handler below. */
-    if ((held & KEY_SELECT) && (down & KEY_B)) {
+    if ((held & MT_KEY_SHIFT) && (down & MT_KEY_BACK)) {
         wv.exit_pending = false;  /* explicit action clears pending */
         wv_restore_original_action();
         return;
@@ -850,7 +852,7 @@ void waveform_view_input(u32 down, u32 held)
 
     /* SELECT+A: commit the current wv_draft into the live sample
      * slot, and rebuild MAS so a running song picks it up. */
-    if ((held & KEY_SELECT) && (down & KEY_A)) {
+    if ((held & MT_KEY_SHIFT) && (down & MT_KEY_CONFIRM)) {
         wv.exit_pending = false;
         wv_commit_draft_action();
         return;
@@ -861,7 +863,7 @@ void waveform_view_input(u32 down, u32 held)
      * on the SD card without touching the song at all. START and
      * SELECT+START are reserved for playback control (pattern loop
      * and song playback respectively). */
-    if ((held & KEY_SELECT) && (down & KEY_X)) {
+    if ((held & MT_KEY_SHIFT) && (down & MT_KEY_MOD_PRIMARY)) {
         wv.exit_pending = false;
         wv_save_open();
         return;
@@ -878,7 +880,7 @@ void waveform_view_input(u32 down, u32 held)
      * is SELECT+LEFT only (handled by the global navigation in
      * navigation.c, which calls waveform_view_close()). When no subpage
      * is open, B falls through to the per-generator handler. */
-    if ((down & KEY_B) && subpage_open) {
+    if ((down & MT_KEY_BACK) && subpage_open) {
         if (tab->close_subpage) tab->close_subpage();
         return;
     }
@@ -892,20 +894,20 @@ void waveform_view_input(u32 down, u32 held)
     }
 
     /* Top-level: L/R shoulder buttons cycle generator tabs. */
-    if (!subpage_open && (down & KEY_L)) {
+    if (!subpage_open && (down & MT_KEY_SHOULDER_L)) {
         if (wv.current_gen > 0) wv.current_gen--;
         else                     wv.current_gen = WV_GEN_COUNT - 1;
         return;
     }
-    if (down & KEY_L) {
+    if (down & MT_KEY_SHOULDER_L) {
         return; /* swallowed: handled above when allowed */
     }
-    if (!subpage_open && (down & KEY_R)) {
+    if (!subpage_open && (down & MT_KEY_SHOULDER_R)) {
         if (wv.current_gen < WV_GEN_COUNT - 1) wv.current_gen++;
         else                                    wv.current_gen = 0;
         return;
     }
-    if (down & KEY_R) {
+    if (down & MT_KEY_SHOULDER_R) {
         return;
     }
 
@@ -914,7 +916,7 @@ void waveform_view_input(u32 down, u32 held)
      * layout and doesn't use the scope, so Y is a no-op there. X is
      * still the fast-adjust modifier for LEFT/RIGHT param nudging, so
      * we specifically pick Y here to avoid clashing. */
-    if (!subpage_open && (down & KEY_Y) && wv.current_gen != WV_GEN_DRAWN) {
+    if (!subpage_open && (down & MT_KEY_MOD_SECONDARY) && wv.current_gen != WV_GEN_DRAWN) {
         wv.vis_zoom = (wv.vis_zoom + 1) % WV_VIS_ZOOM_LEVELS;
         return;
     }

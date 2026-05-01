@@ -32,6 +32,9 @@
 #include "fx_bitcrush.h"
 
 #include <nds.h>
+
+#include "keybind.h"
+
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -427,25 +430,25 @@ void lfe_fx_view_input(u32 down, u32 held)
     handle_touch(down, held);
     if (fxv.touch_mode != FXV_TOUCH_NONE) return;
 
-    if ((held & KEY_SELECT) && (down & KEY_A)) {
+    if ((held & MT_KEY_SHIFT) && (down & MT_KEY_CONFIRM)) {
         wv_commit_draft();
         wv_fx_set_status("Draft committed");
         return;
     }
 
-    if ((held & KEY_SELECT) && (down & KEY_B)) {
+    if ((held & MT_KEY_SHIFT) && (down & MT_KEY_BACK)) {
         wv_restore_original();
         fxv.range_end = wv_get_draft_length();
         wv_fx_set_status("Original restored");
         return;
     }
 
-    if (down & KEY_X) {
+    if (down & MT_KEY_MOD_PRIMARY) {
         apply_effect();
         return;
     }
 
-    if (down & KEY_Y) {
+    if (down & MT_KEY_MOD_SECONDARY) {
         fxv.vis_zoom = (fxv.vis_zoom + 1) % WAVEFORM_ZOOM_COUNT;
         /* Re-center on the current range after a zoom change — manual
          * scroll from a previous zoom level isn't meaningful here. */
@@ -453,18 +456,18 @@ void lfe_fx_view_input(u32 down, u32 held)
         return;
     }
 
-    if (down & KEY_L) {
+    if (down & MT_KEY_SHOULDER_L) {
         fxv.current_fx = (fxv.current_fx + FX_COUNT - 1) % FX_COUNT;
         fxv.param_row = 0;
         return;
     }
-    if (down & KEY_R) {
+    if (down & MT_KEY_SHOULDER_R) {
         fxv.current_fx = (fxv.current_fx + 1) % FX_COUNT;
         fxv.param_row = 0;
         return;
     }
 
-    if (held & KEY_A) {
+    if (held & MT_KEY_CONFIRM) {
         if (rep & KEY_RIGHT) cur_fx()->adjust(fxv.param_row, +1, +1);
         if (rep & KEY_LEFT)  cur_fx()->adjust(fxv.param_row, -1, -1);
         if (rep & KEY_UP)    cur_fx()->adjust(fxv.param_row, +1, +16);

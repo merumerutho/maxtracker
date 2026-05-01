@@ -24,6 +24,7 @@
 #include "scroll_view.h"
 #include <stdio.h>
 #include <string.h>
+#include "keybind.h"
 
 /* dirty flags: use mt_mark_song_modified() from editor_state.h */
 
@@ -846,7 +847,7 @@ void instrument_view_input(u32 down, u32 held)
      * First chord arms a prompt (rendered by instrument_view_draw);
      * second B+A while the prompt is up performs the reset. Any other
      * input clears the pending prompt. */
-    if ((held & KEY_B) && (down & KEY_A)) {
+    if ((held & MT_KEY_BACK) && (down & MT_KEY_CONFIRM)) {
         if (!iv_state.delete_confirm_pending) {
             iv_state.delete_confirm_pending = true;
             return;
@@ -877,14 +878,14 @@ void instrument_view_input(u32 down, u32 held)
 
     /* B alone cancels the pending prompt. */
     if (iv_state.delete_confirm_pending &&
-        (down & (KEY_B | KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT |
-                 KEY_X | KEY_Y | KEY_L | KEY_R | KEY_START | KEY_SELECT))) {
+        (down & (MT_KEY_BACK | KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT |
+                 MT_KEY_MOD_PRIMARY | MT_KEY_MOD_SECONDARY | MT_KEY_SHOULDER_L | MT_KEY_SHOULDER_R | MT_KEY_START | MT_KEY_SHIFT))) {
         iv_state.delete_confirm_pending = false;
-        if (down & KEY_B) return;
+        if (down & MT_KEY_BACK) return;
     }
 
     /* --- X button: cycle envelope tab (Vol->Pan->Pitch->Vol) --- */
-    if (down & KEY_X) {
+    if (down & MT_KEY_MOD_PRIMARY) {
         iv_state.env_tab = (EnvTab)(((int)iv_state.env_tab + 1) % ENV_TAB_COUNT);
     }
 
@@ -895,7 +896,7 @@ void instrument_view_input(u32 down, u32 held)
      *   toggle/cycle for booleans since ±10 is meaningless on a toggle).
      * Repeat-aware via keysDownRepeat so holding a direction keeps
      * nudging the value. */
-    if (!(held & KEY_A)) {
+    if (!(held & MT_KEY_CONFIRM)) {
         if (down & KEY_UP) {
             if (iv_state.param_row > 0)
                 iv_state.param_row--;
@@ -935,7 +936,7 @@ void instrument_view_input(u32 down, u32 held)
     /* (B no longer navigates — use SELECT+LEFT to return to pattern) */
 
     /* L: previous instrument */
-    if (down & KEY_L) {
+    if (down & MT_KEY_SHOULDER_L) {
         if (cursor.instrument > 1)
             cursor.instrument--;
         else
@@ -943,7 +944,7 @@ void instrument_view_input(u32 down, u32 held)
     }
 
     /* R: next instrument */
-    if (down & KEY_R) {
+    if (down & MT_KEY_SHOULDER_R) {
         if (cursor.instrument < song.inst_count)
             cursor.instrument++;
         else

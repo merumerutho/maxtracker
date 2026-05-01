@@ -10,6 +10,7 @@
  */
 
 #include "pattern_view.h"
+#include "keybind.h"
 #include "screen.h"
 #include "font.h"
 #include "song.h"
@@ -746,7 +747,7 @@ void pattern_view_input(u32 kd, u32 kh)
     /* Follow mode: when playing, block all input except START (stop)
      * and SELECT (navigation, handled above by navigation_handle_shift) */
     if (cursor.follow && cursor.playing) {
-        if (down & KEY_START) {
+        if (down & MT_KEY_START) {
             /* Fall through to START handler below */
         } else {
             return; /* block all other input */
@@ -757,13 +758,13 @@ void pattern_view_input(u32 kd, u32 kh)
     MT_Pattern *pat = editor_get_current_pattern(&nrows);
 
     /* ---- R modifier: mute/solo controls (both modes) ---- */
-    if (held & KEY_R) {
-        if (down & KEY_A) {
+    if (held & MT_KEY_SHOULDER_R) {
+        if (down & MT_KEY_CONFIRM) {
             bool muted = (playback_get_mute_mask() >> cursor.channel) & 1;
             playback_set_mute(cursor.channel, !muted);
             return;
         }
-        if (down & KEY_B) {
+        if (down & MT_KEY_BACK) {
             u32 mask = playback_get_mute_mask();
             bool is_solo = true;
             for (int i = 0; i < song.channel_count; i++) {
@@ -784,15 +785,15 @@ void pattern_view_input(u32 kd, u32 kh)
     }
 
     /* ---- L+R together: unmute all channels ---- */
-    if (((down & KEY_L) && (held & KEY_R)) ||
-        ((down & KEY_R) && (held & KEY_L))) {
+    if (((down & MT_KEY_SHOULDER_L) && (held & MT_KEY_SHOULDER_R)) ||
+        ((down & MT_KEY_SHOULDER_R) && (held & MT_KEY_SHOULDER_L))) {
         for (int i = 0; i < song.channel_count; i++)
             playback_set_mute(i, false);
         return;
     }
 
     /* ---- L + LEFT/RIGHT: tempo nudge (LGPT-style) ---- */
-    if ((held & KEY_L) && !(held & KEY_R)) {
+    if ((held & MT_KEY_SHOULDER_L) && !(held & MT_KEY_SHOULDER_R)) {
         u32 rep_l = keysDownRepeat();
         if (rep_l & KEY_LEFT) {
             if (song.initial_tempo > 32) {
@@ -819,7 +820,7 @@ void pattern_view_input(u32 kd, u32 kh)
     }
 
     /* ---- X held: page movement / step change / resize ---- */
-    if (held & KEY_X) {
+    if (held & MT_KEY_MOD_PRIMARY) {
         u32 rep_x = keysDownRepeat();
         if (rep_x & KEY_UP) {
             if (cursor.row >= 16) cursor.row -= 16;
@@ -837,10 +838,10 @@ void pattern_view_input(u32 kd, u32 kh)
         }
 
         /* X+L/R (shoulder): resize pattern */
-        if ((down & (KEY_L | KEY_R)) && pat &&
+        if ((down & (MT_KEY_SHOULDER_L | MT_KEY_SHOULDER_R)) && pat &&
             cursor.order_pos < song.order_count) {
             u8 pidx = song.orders[cursor.order_pos];
-            if (down & KEY_R) {
+            if (down & MT_KEY_SHOULDER_R) {
                 if (nrows < MT_MAX_ROWS) {
                     if (song_resize_pattern(pidx, nrows + 1)) {
                         snprintf(status_msg, sizeof(status_msg),
@@ -851,7 +852,7 @@ void pattern_view_input(u32 kd, u32 kh)
                 }
                 resize_confirm_timer = 0;
             }
-            if (down & KEY_L) {
+            if (down & MT_KEY_SHOULDER_L) {
                 if (nrows > 1) {
                     u16 target = nrows - 1;
                     if (resize_confirm_timer > 0 &&
@@ -878,7 +879,7 @@ void pattern_view_input(u32 kd, u32 kh)
     }
 
     /* ---- Y held: octave / instrument change (both modes) ---- */
-    if (held & KEY_Y) {
+    if (held & MT_KEY_MOD_SECONDARY) {
         u32 rep_y = keysDownRepeat();
         if (rep_y & KEY_UP) {
             if (cursor.octave < 9) cursor.octave++;
@@ -896,7 +897,7 @@ void pattern_view_input(u32 kd, u32 kh)
     }
 
     /* ---- Transport: START = pattern loop (LSDJ style) ---- */
-    if (down & KEY_START) {
+    if (down & MT_KEY_START) {
         if (cursor.playing) {
             stop_playback_all();
         } else {
@@ -910,8 +911,8 @@ void pattern_view_input(u32 kd, u32 kh)
         u32 rep = keysDownRepeat();
 
         /* ---- B modifier (highest priority) ---- */
-        if (held & KEY_B) {
-            if (down & KEY_A) {
+        if (held & MT_KEY_BACK) {
+            if (down & MT_KEY_CONFIRM) {
                 if (cursor.selecting && pat) {
                     u8 r0 = cursor.sel_start_row, r1 = cursor.row;
                     u8 c0 = cursor.sel_start_col, c1 = cursor.channel;
@@ -947,7 +948,7 @@ void pattern_view_input(u32 kd, u32 kh)
                 }
                 return;
             }
-            if ((down & KEY_B) && cursor.selecting) {
+            if ((down & MT_KEY_BACK) && cursor.selecting) {
                 u8 r0 = cursor.sel_start_row, r1 = cursor.row;
                 u8 c0 = cursor.sel_start_col, c1 = cursor.channel;
                 if (r0 > r1) { u8 t = r0; r0 = r1; r1 = t; }
@@ -987,8 +988,8 @@ void pattern_view_input(u32 kd, u32 kh)
         }
 
         /* ---- A modifier ---- */
-        if (held & KEY_A) {
-            if ((down & KEY_START) && cursor.column == 0) {
+        if (held & MT_KEY_CONFIRM) {
+            if ((down & MT_KEY_START) && cursor.column == 0) {
                 MT_Cell *cell = cursor_cell(pat);
                 if (cell) {
                     u8 pi = editor_get_current_pattern_idx();
@@ -1000,7 +1001,7 @@ void pattern_view_input(u32 kd, u32 kh)
                 return;
             }
 
-            if ((down & KEY_A) && !cursor.selecting) {
+            if ((down & MT_KEY_CONFIRM) && !cursor.selecting) {
                 MT_Cell *cell = cursor_cell(pat);
                 if (cell) {
                     u8 pi = editor_get_current_pattern_idx();
@@ -1108,14 +1109,14 @@ void pattern_view_input(u32 kd, u32 kh)
 
         {
             int vis = pattern_view_overview_visible_channels();
-            if (rep & KEY_L) {
+            if (rep & MT_KEY_SHOULDER_L) {
                 if (cursor.channel > 0) {
                     cursor.channel--;
                     if (cursor.channel < cursor.ch_group)
                         cursor.ch_group = (cursor.channel / vis) * vis;
                 }
             }
-            if (rep & KEY_R) {
+            if (rep & MT_KEY_SHOULDER_R) {
                 if (cursor.channel < song.channel_count - 1) {
                     cursor.channel++;
                     if (cursor.channel >= cursor.ch_group + vis)
@@ -1128,7 +1129,7 @@ void pattern_view_input(u32 kd, u32 kh)
 
     /* ==== OVERVIEW MODE (all channels compressed) ==== */
 
-    if ((held & KEY_B) && (down & KEY_A)) {
+    if ((held & MT_KEY_BACK) && (down & MT_KEY_CONFIRM)) {
         if (cursor.selecting && pat) {
             u8 r0 = cursor.sel_start_row, r1 = cursor.row;
             u8 c0 = cursor.sel_start_col, c1 = cursor.channel;
@@ -1157,7 +1158,7 @@ void pattern_view_input(u32 kd, u32 kh)
         return;
     }
 
-    if ((down & KEY_B) && cursor.selecting && pat) {
+    if ((down & MT_KEY_BACK) && cursor.selecting && pat) {
         u8 r0 = cursor.sel_start_row, r1 = cursor.row;
         u8 c0 = cursor.sel_start_col, c1 = cursor.channel;
         if (r0 > r1) { u8 t = r0; r0 = r1; r1 = t; }
@@ -1170,14 +1171,14 @@ void pattern_view_input(u32 kd, u32 kh)
         return;
     }
 
-    if ((held & KEY_A) &&
+    if ((held & MT_KEY_CONFIRM) &&
         !cursor.selecting &&
-        !(held & (KEY_B | KEY_R | KEY_L | MT_SHIFT_KEY))) {
+        !(held & (MT_KEY_BACK | MT_KEY_SHOULDER_R | MT_KEY_SHOULDER_L | MT_SHIFT_KEY))) {
         MT_Cell *cell = cursor_cell(pat);
         if (cell) {
             u8 pi = editor_get_current_pattern_idx();
 
-            if (down & KEY_A) {
+            if (down & MT_KEY_CONFIRM) {
                 if (note_slot_a_press(cell, pi, cursor.row, cursor.channel)) {
                     mt_mark_song_modified();
                 }
@@ -1249,7 +1250,7 @@ void pattern_view_input(u32 kd, u32 kh)
     {
         int vis = pattern_view_overview_visible_channels();
         u32 rep_lr = keysDownRepeat();
-        if (rep_lr & KEY_L) {
+        if (rep_lr & MT_KEY_SHOULDER_L) {
             if (cursor.ch_group >= vis) {
                 cursor.ch_group -= vis;
                 cursor.channel = cursor.ch_group;
@@ -1258,7 +1259,7 @@ void pattern_view_input(u32 kd, u32 kh)
                 cursor.channel = 0;
             }
         }
-        if (rep_lr & KEY_R) {
+        if (rep_lr & MT_KEY_SHOULDER_R) {
             if (cursor.ch_group + vis < song.channel_count) {
                 cursor.ch_group += vis;
                 cursor.channel = cursor.ch_group;

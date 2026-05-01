@@ -29,6 +29,9 @@
 #include "lfe.h"
 
 #include <nds.h>
+
+#include "keybind.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -133,12 +136,12 @@ static void tt_param_adjust(int param, int delta)
 
 static void tt_input(u32 down, u32 held)
 {
-    if (down & KEY_X) {
+    if (down & MT_KEY_MOD_PRIMARY) {
         tt_generate();
         return;
     }
 
-    if (!(held & KEY_A)) {
+    if (!(held & MT_KEY_CONFIRM)) {
         if (down & KEY_UP) {
             if (tt.param_row > 0) tt.param_row--;
             else                      tt.param_row = TT_PARAM_COUNT - 1;

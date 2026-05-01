@@ -91,7 +91,7 @@ static u8 get_contextual_instrument(void)
  * for its own local SELECT chord (e.g. SELECT+B "restore original"
  * inside the waveform editor).
  *
- * Design rule: each `if (down & KEY_X)` block must set `handled` only
+ * Design rule: each `if (down & MT_KEY_*)` block must set `handled` only
  * in branches that actually perform the action. Adding a no-op branch
  * (like "default: break;" in a nav switch) must NOT mark handled.
  */
@@ -272,7 +272,7 @@ bool navigation_handle_shift(u32 down, u32 held)
     }
 
     /* --- SELECT+START --- */
-    if (down & KEY_START) {
+    if (down & MT_KEY_START) {
         if (current_screen != SCREEN_DISK) {
             /* Song playback (full arrangement
              * from current order position). If already playing, stop
@@ -311,7 +311,7 @@ bool navigation_handle_shift(u32 down, u32 held)
     /* SELECT+B = enter selection mode (pattern or song view). Only claims
      * the event when not already selecting — otherwise passes through to
      * the active view (e.g. LFE binds SELECT+B as "restore original"). */
-    if (down & KEY_B) {
+    if (down & MT_KEY_BACK) {
         if (current_screen == SCREEN_PATTERN && !cursor.selecting) {
             cursor.selecting = true;
             cursor.sel_start_row = cursor.row;
@@ -333,7 +333,7 @@ bool navigation_handle_shift(u32 down, u32 held)
 
     /* SELECT+A = paste clipboard at cursor (pattern block or order entries).
      * Only claims the event when a paste actually happened. */
-    if (down & KEY_A) {
+    if (down & MT_KEY_CONFIRM) {
         if (current_screen == SCREEN_PATTERN) {
             int nrows;
             MT_Pattern *pat = editor_get_current_pattern(&nrows);

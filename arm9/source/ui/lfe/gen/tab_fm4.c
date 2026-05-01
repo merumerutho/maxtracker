@@ -33,6 +33,9 @@
 #include "lfe_dbmath.h"
 
 #include <nds.h>
+
+#include "keybind.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -455,7 +458,7 @@ WV_ROW_DISPATCH(fm4_lfo, FM4_LFO_PARAMS, FM4_LFO_PARAM_COUNT);
  * A+L/R / A+UP/DN adjusts the value under the cursor. */
 static void fm4_input_matrix(u32 down, u32 held)
 {
-    if (!(held & KEY_A)) {
+    if (!(held & MT_KEY_CONFIRM)) {
         if (down & KEY_UP)    wv_cycle(&fm.matrix_src, -1, LFE_FM4_NUM_OPS);
         if (down & KEY_DOWN)  wv_cycle(&fm.matrix_src, +1, LFE_FM4_NUM_OPS);
         if (down & KEY_LEFT)  wv_cycle(&fm.matrix_dst, -1, LFE_FM4_NUM_OPS);
@@ -477,7 +480,7 @@ static void fm4_input_matrix(u32 down, u32 held)
 
 static void fm4_input(u32 down, u32 held)
 {
-    if (down & KEY_X) { fm4_generate(); return; }
+    if (down & MT_KEY_MOD_PRIMARY) { fm4_generate(); return; }
     switch (fm.subpage) {
     case 0: wv_handle_row_input(&fm.param_row,     FM4_PARAM_COUNT,     fm4_adjs,     down, held); break;
     case 1: wv_handle_row_input(&fm.op_param_row,  FM4_OP_PARAM_COUNT,  fm4_op_adjs,  down, held); break;

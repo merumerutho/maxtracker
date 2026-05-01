@@ -33,6 +33,9 @@
 #include "lfe_dbmath.h"
 
 #include <nds.h>
+
+#include "keybind.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -438,7 +441,7 @@ WV_ROW_DISPATCH(drum_lfo, DRUM_LFO_PARAMS, DRUM_LFO_PARAM_COUNT);
 
 static void drum_input(u32 down, u32 held)
 {
-    if (down & KEY_X) { drum_generate(); return; }
+    if (down & MT_KEY_MOD_PRIMARY) { drum_generate(); return; }
     switch (dm.subpage) {
     case 0: wv_handle_row_input(&dm.param_row,     DRUM_PARAM_COUNT,     drum_adjs,     down, held); break;
     case 1: wv_handle_row_input(&dm.mod_param_row, DRUM_MOD_PARAM_COUNT, drum_mod_adjs, down, held); break;

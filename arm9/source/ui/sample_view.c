@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "keybind.h"
 
 extern FileBrowser disk_browser;
 extern bool        disk_browser_inited;
@@ -355,7 +356,7 @@ void sample_view_input(u32 down, u32 held)
     /* B+A: delete/clear the current sample (two-tap confirm).
      * Without the confirm, a stray B+A frees PCM that an active
      * playback/LFE draft may still be dereferencing. */
-    if ((held & KEY_B) && (down & KEY_A)) {
+    if ((held & MT_KEY_BACK) && (down & MT_KEY_CONFIRM)) {
         MT_Sample *s = &song.samples[sv.selected];
         if (!s->active) return;
         if (!sv.delete_confirm_pending) {
@@ -402,12 +403,12 @@ void sample_view_input(u32 down, u32 held)
      * after ui_repeat_delay frames, one step per ui_repeat_rate frames. */
     u32 rep = keysDownRepeat();
 
-    if (rep & KEY_L) {
+    if (rep & MT_KEY_SHOULDER_L) {
         if (sv.selected > 0) sv.selected--;
         sv.scroll = 0;
         sv.confirm_pending = false;
     }
-    if (rep & KEY_R) {
+    if (rep & MT_KEY_SHOULDER_R) {
         if (sv.selected < MT_MAX_SAMPLES - 1) sv.selected++;
         sv.scroll = 0;
         sv.confirm_pending = false;
@@ -422,11 +423,11 @@ void sample_view_input(u32 down, u32 held)
         if (sv.action_row + 1 < SV_ACTION_COUNT) sv.action_row++;
         sv.confirm_pending = false;
     }
-    if ((down & KEY_B) && sv.confirm_pending) {
+    if ((down & MT_KEY_BACK) && sv.confirm_pending) {
         sv.confirm_pending = false;
         return;
     }
-    if ((down & KEY_A) && !(held & KEY_B)) {
+    if ((down & MT_KEY_CONFIRM) && !(held & MT_KEY_BACK)) {
         MT_Sample *s = &song.samples[sv.selected];
         if (sv.action_row == SV_ACTION_LOAD) {
             /* LOAD: confirm if the slot has unsaved data. */
@@ -450,7 +451,7 @@ void sample_view_input(u32 down, u32 held)
         }
         return;
     }
-    if (down & KEY_X) {
+    if (down & MT_KEY_MOD_PRIMARY) {
         sv.zoom++;
         if (sv.zoom >= WAVEFORM_ZOOM_COUNT) sv.zoom = 0;
         sv.scroll = 0;

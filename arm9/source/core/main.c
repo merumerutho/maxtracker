@@ -39,6 +39,7 @@
 #include "mas_write.h"
 #include "playback.h"
 #include "project_view.h"
+#include "keybind.h"
 #include "test.h"
 
 /* Forward declarations for NitroFS (avoids header shadow with our own names) */
@@ -205,6 +206,7 @@ int main(int argc, char **argv)
     song_init();
 
     /* Init subsystems */
+    keybind_set_preset(MT_PRESET_DEFAULT);
     undo_init();
     playback_init();
 
@@ -280,7 +282,7 @@ int main(int argc, char **argv)
                 /* START in song view = song playback (not pattern loop).
                  * This is handled here because song_view_input's own
                  * START handler will be removed (centralized below). */
-                if (kd & KEY_START) {
+                if (kd & MT_KEY_START) {
                     if (cursor.playing)
                         stop_playback_all();
                     else
@@ -307,7 +309,7 @@ int main(int argc, char **argv)
         case SCREEN_INSTRUMENT:
             if (!navigation_handle_shift(kd, kh)) {
                 /* START = pattern loop (inherits inside/overview context) */
-                if (kd & KEY_START) {
+                if (kd & MT_KEY_START) {
                     if (cursor.playing) stop_playback_all();
                     else                start_pattern_loop();
                 } else {
@@ -321,7 +323,7 @@ int main(int argc, char **argv)
         case SCREEN_MIXER:
             if (!navigation_handle_shift(kd, kh)) {
                 /* START in mixer = song playback from current position */
-                if (kd & KEY_START) {
+                if (kd & MT_KEY_START) {
                     if (cursor.playing) stop_playback_all();
                     else                start_song_playback();
                 } else {
@@ -341,7 +343,7 @@ int main(int argc, char **argv)
         case SCREEN_SAMPLE:
             if (!navigation_handle_shift(kd, kh)) {
                 /* START = pattern loop (inherits inside/overview context) */
-                if (kd & KEY_START) {
+                if (kd & MT_KEY_START) {
                     if (cursor.playing) stop_playback_all();
                     else                start_pattern_loop();
                 } else {
@@ -360,7 +362,7 @@ int main(int argc, char **argv)
              * SELECT+START triggers song playback. */
             if (!navigation_handle_shift(kd, kh)) {
                 /* START = pattern loop from LFE too (X generates now) */
-                if (kd & KEY_START) {
+                if (kd & MT_KEY_START) {
                     if (cursor.playing) stop_playback_all();
                     else                start_pattern_loop();
                 } else {
@@ -381,7 +383,7 @@ int main(int argc, char **argv)
 
         case SCREEN_LFE_FX:
             if (!navigation_handle_shift(kd, kh)) {
-                if (kd & KEY_START) {
+                if (kd & MT_KEY_START) {
                     if (cursor.playing) stop_playback_all();
                     else                start_pattern_loop();
                 } else {

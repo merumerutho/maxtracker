@@ -16,8 +16,10 @@
 #include <nds.h>
 #include <stdbool.h>
 
-/* Configurable shift button (LSDJ-style). Default: SELECT. */
-#define MT_SHIFT_KEY KEY_SELECT
+/* Configurable shift button (LSDJ-style).
+ * Now backed by the keybind system — resolves via mt_keymap[]. */
+#include "keybind.h"
+#define MT_SHIFT_KEY MT_KEY_SHIFT
 
 /*
  * Global SELECT-chord handler. Returns true ONLY if it actually

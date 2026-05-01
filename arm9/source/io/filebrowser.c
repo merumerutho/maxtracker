@@ -11,6 +11,8 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include "keybind.h"
+
 /* Default filesystem browse root — see filebrowser.h for docs. */
 const char *fs_browse_root = "./data/";
 
@@ -315,7 +317,7 @@ bool filebrowser_input(FileBrowser *fb, u32 down)
          * that happens, filebrowser_at_root() never returns true
          * again and the caller's B-exit shortcut is permanently
          * broken. */
-        if ((down & KEY_B) && !filebrowser_at_root(fb)) {
+        if ((down & MT_KEY_BACK) && !filebrowser_at_root(fb)) {
             char *slash = strrchr(fb->path, '/');
             if (slash && slash != fb->path) {
                 *slash = '\0';
@@ -348,7 +350,7 @@ bool filebrowser_input(FileBrowser *fb, u32 down)
             fb->cursor = fb->entry_count - 1;
     }
 
-    if (down & KEY_A) {
+    if (down & MT_KEY_CONFIRM) {
         if (fb->is_dir[fb->cursor]) {
             /* Enter directory. Update fb->path in place and reload the
              * listing. root_path stays intact so at-root detection
@@ -371,11 +373,11 @@ bool filebrowser_input(FileBrowser *fb, u32 down)
 
     /* START in SAVE mode is "save into current directory". The caller
      * picks this up via filebrowser_take_save_request() next frame. */
-    if ((down & KEY_START) && fb->mode == FB_MODE_SAVE) {
+    if ((down & MT_KEY_START) && fb->mode == FB_MODE_SAVE) {
         fb->save_requested = true;
     }
 
-    if (down & KEY_B) {
+    if (down & MT_KEY_BACK) {
         /* Go up one directory level */
         char *slash = strrchr(fb->path, '/');
         if (slash && slash != fb->path) {

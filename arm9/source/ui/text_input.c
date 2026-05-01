@@ -27,6 +27,7 @@
  */
 
 #include "text_input.h"
+#include "keybind.h"
 #include "font.h"
 #include "screen.h"
 #include <string.h>
@@ -202,8 +203,8 @@ void text_input_input(u32 down, u32 held)
     if (!ti.active) return;
 
     /* Shortcut keys. */
-    if (down & KEY_START)  { close_commit(); return; }
-    if (down & KEY_SELECT) { close_cancel(); return; }
+    if (down & MT_KEY_START)  { close_commit(); return; }
+    if (down & MT_KEY_SHIFT) { close_cancel(); return; }
 
     if (down & KEY_UP) {
         if (ti.row > 0) ti.row--;
@@ -228,8 +229,8 @@ void text_input_input(u32 down, u32 held)
         }
     }
 
-    if (down & KEY_A) press_current();
-    if (down & KEY_B) buf_backspace();
+    if (down & MT_KEY_CONFIRM) press_current();
+    if (down & MT_KEY_BACK) buf_backspace();
 }
 
 /* ------------------------------------------------------------------ */

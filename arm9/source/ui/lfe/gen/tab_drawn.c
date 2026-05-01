@@ -32,6 +32,9 @@
 #include "lfe.h"
 
 #include <nds.h>
+
+#include "keybind.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -220,7 +223,7 @@ static void drawn_input(u32 down, u32 held)
 
     /* Both A and X commit the drawn waveform — A for legacy muscle
      * memory, X for consistency with the other tabs. */
-    if ((down & KEY_A) || (down & KEY_X)) {
+    if ((down & MT_KEY_CONFIRM) || (down & MT_KEY_MOD_PRIMARY)) {
         if (dr.dirty) {
             drawn_generate();
         } else {

@@ -13,6 +13,7 @@
  */
 
 #include "project_view.h"
+#include "keybind.h"
 #include "playback.h"
 #include "memtrack.h"
 #include "screen.h"
@@ -72,6 +73,7 @@ typedef enum {
     X(DEBUG_OVERLAY,    "Debug Overlay",     PK_RW)        \
     X(KEY_REPEAT_DELAY, "Key Repeat Delay",  PK_RW)        \
     X(KEY_REPEAT_RATE,  "Key Repeat Rate",   PK_RW)        \
+    X(KEY_PRESET,       "Key Bindings",      PK_RW)        \
     X(SEP1,             NULL,                PK_SEP)         \
     X(INST_COUNT,       "Instruments",       PK_RO)          \
     X(SAMP_COUNT,       "Samples",           PK_RO)          \
@@ -403,6 +405,13 @@ static void adjust_value(ProjRow row, int delta)
         ui_apply_key_repeat();
         break;
     }
+    case PROW_KEY_PRESET: {
+        int v = (int)keybind_get_preset() + delta;
+        if (v < 0) v = MT_PRESET_COUNT - 1;
+        if (v >= MT_PRESET_COUNT) v = 0;
+        keybind_set_preset((MT_KeyPreset)v);
+        break;
+    }
     case PROW_NAME: {
         /* LEFT/RIGHT moves cursor within name */
         int pos = (int)pv_state.name_edit_pos + delta;
@@ -528,6 +537,11 @@ static void draw_top(u8 *fb)
         case PROW_KEY_REPEAT_RATE:
             snprintf(vbuf, sizeof(vbuf), "%2d fr (%dms)",
                      ui_repeat_rate, (int)ui_repeat_rate * 1000 / 60);
+            break;
+        case PROW_KEY_PRESET:
+            snprintf(vbuf, sizeof(vbuf), "%s",
+                     keybind_preset_name(keybind_get_preset()));
+            val_color = PAL_NOTE;
             break;
         case PROW_INST_COUNT:
             snprintf(vbuf, sizeof(vbuf), "%d", song.inst_count);
@@ -689,7 +703,7 @@ void project_view_input(u32 down, u32 held)
     /* --- Song Name row: A opens the on-screen keyboard.
      * Must run before the A-held edit branch below, which would
      * otherwise just nudge the (now-obsolete) name_edit_pos cursor. */
-    if ((down & KEY_A) &&
+    if ((down & MT_KEY_CONFIRM) &&
         (ProjRow)pv_state.cursor_row == PROW_NAME) {
         text_input_open(song.name, sizeof(song.name) - 1,
                         "Rename Song");
@@ -697,7 +711,7 @@ void project_view_input(u32 down, u32 held)
     }
 
     /* --- Navigation --- */
-    if (!(held & KEY_A)) {
+    if (!(held & MT_KEY_CONFIRM)) {
         /* No A held: d-pad = cursor movement, repeat-aware so holding
          * the key scrolls the list after ui_repeat_delay frames. */
         u32 rep = keysDownRepeat();
@@ -706,7 +720,7 @@ void project_view_input(u32 down, u32 held)
     }
 
     /* --- B: cancel confirmation (no longer navigates) --- */
-    if (down & KEY_B) {
+    if (down & MT_KEY_BACK) {
         if (pv_state.confirm_pending) {
             pv_state.confirm_pending = false;
         }
@@ -717,7 +731,7 @@ void project_view_input(u32 down, u32 held)
     ProjRow row = (ProjRow)pv_state.cursor_row;
 
     /* --- A pressed/held on action rows: trigger / confirm --- */
-    if ((down & KEY_A) && is_action(row)) {
+    if ((down & MT_KEY_CONFIRM) && is_action(row)) {
         if (needs_confirm(row)) {
             if (pv_state.confirm_pending) {
                 if (row == PROW_NEW_SONG) {
@@ -747,7 +761,7 @@ void project_view_input(u32 down, u32 held)
 
     /* --- A held + directions: edit values ---
      * Use keysDownRepeat so holding A+RIGHT ramps the value. */
-    if (held & KEY_A) {
+    if (held & MT_KEY_CONFIRM) {
         if (is_readonly(row) || is_separator(row) || is_action(row))
             return;
 

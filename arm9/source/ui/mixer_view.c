@@ -13,6 +13,7 @@
  */
 
 #include "mixer_view.h"
+#include "keybind.h"
 #include "draw_util.h"
 #include "screen.h"
 #include "font.h"
@@ -259,7 +260,7 @@ void mixer_view_input(u32 down, u32 held)
     if (ch_count > MT_MAX_CHANNELS) ch_count = MT_MAX_CHANNELS;
 
     /* Y + LEFT/RIGHT: adjust panning for selected channel (±16). */
-    if (held & KEY_Y) {
+    if (held & MT_KEY_MOD_SECONDARY) {
         int ch = mixer_state.selected_channel;
         if (ch < MT_MAX_CHANNELS) {
             u32 rep = keysDownRepeat();
@@ -277,7 +278,7 @@ void mixer_view_input(u32 down, u32 held)
      *   A held + LEFT/RIGHT: volume ±4 (large step)
      * Volume clamped to 0-64. Vertical list, so navigation matches the
      * scrolldirection. */
-    if (!(held & KEY_A)) {
+    if (!(held & MT_KEY_CONFIRM)) {
         u32 rep = keysDownRepeat();
         if (rep & KEY_UP) {
             if (mixer_state.selected_channel > 0)
@@ -304,7 +305,7 @@ void mixer_view_input(u32 down, u32 held)
     }
 
     /* X: toggle mute */
-    if (down & KEY_X) {
+    if (down & MT_KEY_MOD_PRIMARY) {
         int ch = mixer_state.selected_channel;
         if (ch < MT_MAX_CHANNELS) {
             mixer_state.muted[ch] = !mixer_state.muted[ch];

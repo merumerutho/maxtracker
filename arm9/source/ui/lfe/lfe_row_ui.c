@@ -14,6 +14,8 @@
 #include "lfe.h"
 #include "lfe_dbmath.h"
 
+#include "keybind.h"
+
 #include <stdio.h>
 
 void wv_db_step(int *shadow_db, uint16_t *q15_field, int delta)
@@ -44,7 +46,7 @@ void wv_handle_row_input(int *row, int row_count,
                          const wv_adj_fn *adjs,
                          u32 down, u32 held)
 {
-    if (!(held & KEY_A)) {
+    if (!(held & MT_KEY_CONFIRM)) {
         if (down & KEY_UP) {
             if (*row > 0) (*row)--;
             else          *row = row_count - 1;
@@ -69,7 +71,7 @@ void wv_handle_row_input(int *row, int row_count,
      * row. Used by submenu-entry rows ("Mod Slots >>"); regular adjust
      * rows route delta=0 into wv_cycle / wv_int_clamped which treat it
      * as a no-op, so this is backward-compat for every other row. */
-    if ((down & KEY_A) && !dir_pressed) adjs[*row](0);
+    if ((down & MT_KEY_CONFIRM) && !dir_pressed) adjs[*row](0);
 }
 
 /* Fader bar geometry for the generator row lists — pixel coordinates

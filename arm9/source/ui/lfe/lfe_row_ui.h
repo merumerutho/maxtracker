@@ -119,7 +119,7 @@ void wv_draw_rows_ex(u8 *top_fb,
  * A-held UP/DN step by ±10 (both repeat-aware via keysDownRepeat).
  *
  * The canonical input handler for every X-macro-driven tab — replace
- * the hand-rolled `if (!(held & KEY_A)) { nav } else { adjust }` block
+ * the hand-rolled `if (!(held & MT_KEY_CONFIRM)) { nav } else { adjust }` block
  * with a single call.
  */
 void wv_handle_row_input(int *row, int row_count,

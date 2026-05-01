@@ -23,6 +23,9 @@
 #include "lfe.h"
 
 #include <nds.h>
+
+#include "keybind.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -147,12 +150,12 @@ static void braids_param_adjust(int param, int delta)
 
 static void braids_input(u32 down, u32 held)
 {
-    if (down & KEY_X) {
+    if (down & MT_KEY_MOD_PRIMARY) {
         braids_generate();
         return;
     }
 
-    if (!(held & KEY_A)) {
+    if (!(held & MT_KEY_CONFIRM)) {
         if (down & KEY_UP) {
             if (br.param_row > 0) br.param_row--;
             else                          br.param_row = BRAIDS_PARAM_COUNT - 1;
