@@ -1,47 +1,35 @@
 /*
  * keybind.c — Runtime key binding preset management.
  *
- * Preset definitions live in presets/<name>.def — one file per preset.
- * Each .def file contains X(action, key) lines that are expanded here
- * into static const arrays via the X_INIT macro.
+ * Preset definitions live in presets/<stem>.def — one file per preset.
+ * Each .def defines a PRESET_MAP_<stem>(X) macro that is expanded here
+ * into static const arrays via KEYBIND_PRESETS.
  */
 
 #include "keybind.h"
 #include <string.h>
 
+#include "presets/default.def"
+#include "presets/nds_fat.def"
+#include "presets/nds_lite.def"
+
 /* ---- Preset tables --------------------------------------------------- */
 
-#define X_INIT(action, key) [MT_ACT_##action] = (key),
-
-static const u32 map_default[MT_ACT_COUNT] = {
-#define X X_INIT
-#include "presets/default.def"
-#undef X
-};
-
-static const u32 map_nds_fat[MT_ACT_COUNT] = {
-#define X X_INIT
-#include "presets/nds_fat.def"
-#undef X
-};
-
-static const u32 map_nds_lite[MT_ACT_COUNT] = {
-#define X X_INIT
-#include "presets/nds_lite.def"
-#undef X
-};
-
-#undef X_INIT
+#define X_SLOT(action, key) [MT_ACT_##action] = (key),
+#define X_MAP(name, label, stem) \
+    static const u32 map_##stem[MT_ACT_COUNT] = { PRESET_MAP_##stem(X_SLOT) };
+KEYBIND_PRESETS(X_MAP)
+#undef X_MAP
+#undef X_SLOT
 
 static const u32 *preset_maps[MT_PRESET_COUNT] = {
-    [MT_PRESET_DEFAULT]  = map_default,
-    [MT_PRESET_NDS_FAT]  = map_nds_fat,
-    [MT_PRESET_NDS_LITE] = map_nds_lite,
+#define X(name, label, stem) [MT_PRESET_##name] = map_##stem,
+    KEYBIND_PRESETS(X)
+#undef X
 };
 
-/* Preset display labels. */
 static const char *preset_labels[MT_PRESET_COUNT] = {
-#define X(name, label) [MT_PRESET_##name] = label,
+#define X(name, label, stem) [MT_PRESET_##name] = label,
     KEYBIND_PRESETS(X)
 #undef X
 };

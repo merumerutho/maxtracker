@@ -6,10 +6,10 @@
  * array that fits in a single ARM9 cache line.  Views read it through
  * the MT_KEY_* convenience macros defined below.
  *
- * Presets are defined in presets/<name>.def, one file per preset.
- * Each .def contains X(action, key) lines.  Adding a new preset
- * requires a new .def file, an entry in KEYBIND_PRESETS below,
- * and a corresponding #include + array in keybind.c.
+ * Presets are defined in presets/<stem>.def, one file per preset.
+ * Each .def defines a PRESET_MAP_<stem>(X) macro.  Adding a new
+ * preset requires a new .def file, an entry in KEYBIND_PRESETS
+ * below, and a corresponding #include in keybind.c.
  */
 
 #ifndef MT_KEYBIND_H
@@ -40,15 +40,18 @@ typedef enum {
 
 /* ---- Presets ---------------------------------------------------------
  *
- * KEYBIND_PRESETS(X)   X(enum_suffix, display_label)
+ * KEYBIND_PRESETS(X)   X(enum_suffix, display_label, def_stem)
+ *
+ * def_stem must match the PRESET_MAP_<stem> macro defined in the
+ * corresponding presets/<stem>.def file.
  */
-#define KEYBIND_PRESETS(X)              \
-    X(DEFAULT,  "Default")              \
-    X(NDS_FAT,  "NDS Fat")             \
-    X(NDS_LITE, "NDS Lite")
+#define KEYBIND_PRESETS(X)                      \
+    X(DEFAULT,  "Default",  default)            \
+    X(NDS_FAT,  "NDS Fat",  nds_fat)           \
+    X(NDS_LITE, "NDS Lite", nds_lite)
 
 typedef enum {
-#define X(name, label) MT_PRESET_##name,
+#define X(name, label, stem) MT_PRESET_##name,
     KEYBIND_PRESETS(X)
 #undef X
     MT_PRESET_COUNT

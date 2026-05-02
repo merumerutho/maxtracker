@@ -1,14 +1,16 @@
 /*
  * nds_fat.def — Key bindings for NDS Fat (original DS Phat).
  *
- * Each line is X(action, key).  Included by keybind.c to build the
- * preset table; do not add #include guards.
+ * Defines PRESET_MAP_nds_fat(X) — expanded by keybind.c via
+ * KEYBIND_PRESETS to build the preset table.  Do not add #include
+ * guards.
  */
-X(CONFIRM,       KEY_A)
-X(BACK,          KEY_B)
-X(MOD_PRIMARY,   KEY_X)
-X(MOD_SECONDARY, KEY_Y)
-X(SHOULDER_L,    KEY_L)
-X(SHOULDER_R,    KEY_R)
-X(START,         KEY_START)
-X(SHIFT,         KEY_SELECT)
+#define PRESET_MAP_nds_fat(X)       \
+    X(CONFIRM,       KEY_A)         \
+    X(BACK,          KEY_B)         \
+    X(MOD_PRIMARY,   KEY_X)         \
+    X(MOD_SECONDARY, KEY_Y)         \
+    X(SHOULDER_L,    KEY_L)         \
+    X(SHOULDER_R,    KEY_R)         \
+    X(START,         KEY_START)     \
+    X(SHIFT,         KEY_SELECT)
