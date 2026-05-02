@@ -28,6 +28,7 @@
  */
 
 #include "nds_shim.h"
+#include "keybind.h"
 #include "navigation.h"
 #include "screen.h"
 #include "editor_state.h"
@@ -99,7 +100,7 @@ bool autosave_dirty;
 char status_msg[64];
 int  status_timer;
 
-void disk_view_cleanup(void) {}
+void disk_view_cleanup(void) { sample_load_target = 0; }
 
 /* Clipboard + undo — navigation.c's SHIFT+A paste path references these.
  * Stub away the real behavior; the tests don't drive the paste path. */
@@ -291,6 +292,7 @@ static void test_unmapped_shift_chord_falls_through(void)
 int main(void)
 {
     printf("=== navigation host tests ===\n");
+    keybind_set_preset(MT_PRESET_DEFAULT);
 
     test_shift_right_song_to_pattern();
     test_shift_left_pattern_to_song();

@@ -106,11 +106,12 @@ typedef u32 mm_sfxhand;
 #define KEY_LID     (1 << 13)
 #endif
 
-/* libnds key-repeat knob — no-op on host (no input loop to drive). */
+/* libnds key-repeat stubs — no-op on host (no input loop to drive). */
 static inline void keysSetRepeat(unsigned delay, unsigned rate)
 {
     (void)delay; (void)rate;
 }
+static inline u32 keysDownRepeat(void) { return 0; }
 
 #endif /* !MM_ENGINE_SHIM_H */
 #endif /* NDS_SHIM_H */

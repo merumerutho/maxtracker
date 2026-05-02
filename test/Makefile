@@ -92,7 +92,7 @@ WAV_TEST := wav_test
 
 # ---- Filebrowser tests (directory parsing, sort, at_root regression) ----
 
-FB_TEST_SRCS := filebrowser_test.c $(ARM9_IO)/filebrowser.c $(ARM9_UI)/scroll_view.c
+FB_TEST_SRCS := filebrowser_test.c $(ARM9_IO)/filebrowser.c $(ARM9_UI)/scroll_view.c $(ARM9_UI)/keybind.c
 
 FB_TEST := filebrowser_test
 
@@ -106,6 +106,7 @@ FB_TEST := filebrowser_test
 NAV_TEST_SRCS := navigation_test.c \
                  $(ARM9_UI)/navigation.c \
                  $(ARM9_UI)/editor_state.c \
+                 $(ARM9_UI)/keybind.c \
                  $(ARM9_CORE)/song.c \
                  $(ARM9_CORE)/scale.c
 

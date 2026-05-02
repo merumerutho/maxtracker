@@ -16,6 +16,7 @@
  */
 
 #include "filebrowser.h"
+#include "keybind.h"
 #include "nds_shim.h"
 
 #include <dirent.h>
@@ -243,6 +244,7 @@ static void test_empty_root_b_lockout(void)
 int main(void)
 {
     printf("=== filebrowser host tests ===\n");
+    keybind_set_preset(MT_PRESET_DEFAULT);
 
     test_sort_alpha_dirs_first();
     test_at_root_after_init_and_descent();
