@@ -46,6 +46,11 @@ static volatile u8   pb_tick = 0;
 /* Flag: pattern cells were edited and need cache flush */
 static bool pb_cells_dirty = false;
 
+/* Tempo (BPM) the current MAS buffer was built with. maxmod's
+ * mmSetModuleTempo takes a Q10 multiplier where 0x400 == this base, so
+ * playback_set_tempo() converts an absolute BPM relative to it. */
+static u8 mas_base_tempo = 125;
+
 
 /* ====================================================================
  * FIFO handler — receives messages from ARM7
@@ -311,6 +316,7 @@ static void build_mas_buffer(void)
     hdr->global_volume  = song.global_volume;
     hdr->initial_speed  = song.initial_speed;
     hdr->initial_tempo  = song.initial_tempo;
+    mas_base_tempo      = song.initial_tempo ? song.initial_tempo : 125;
     hdr->repeat_position = song.repeat_position;
 
     /* Flags */
@@ -756,7 +762,15 @@ u32 playback_get_mute_mask(void)
 
 void playback_set_tempo(u8 bpm)
 {
-    fifoSendValue32(FIFO_MT, MT_MKCMD(MT_CMD_SET_TEMPO, (u32)bpm));
+    if (bpm == 0) return;
+    /* maxmod's mmSetModuleTempo takes a Q10 multiplier where 0x400 == the
+     * tempo the module was built with (mas_base_tempo). Convert the desired
+     * absolute BPM to that multiplier here, where we know the base; the ARM7
+     * side just applies it. The engine clamps to [0.5x, 2.0x] of the base,
+     * so BPM far from the base saturates. */
+    u8 base = mas_base_tempo ? mas_base_tempo : 125;
+    u32 mult = ((u32)bpm * 1024u) / base;
+    fifoSendValue32(FIFO_MT, MT_MKCMD(MT_CMD_SET_TEMPO, mult));
 }
 
 void playback_mark_cells_dirty(void)

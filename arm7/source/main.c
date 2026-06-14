@@ -151,12 +151,11 @@ static void mt_ValueHandler(u32 value, void *userdata)
         break;
 
     case MT_CMD_SET_TEMPO:
-        /* Set BPM directly. Q10 format: param * 1024 / param = 1024 for 1x.
-         * mmSetModuleTempo expects Q10 where 0x400 = 1.0x.
-         * We receive raw BPM and need to scale relative to current tempo.
-         * Simpler: just write directly. But mmSetModuleTempo is the safe API. */
+        /* param is a Q10 tempo multiplier (0x400 = the module's base tempo).
+         * ARM9 converts from absolute BPM on its side, where it knows the
+         * base tempo. mmSetModuleTempo clamps to [0x200, 0x800] = 0.5x-2.0x. */
         if (param > 0)
-            mmSetModuleTempo(param * 1024 / 125);  /* scale relative to 125 BPM base */
+            mmSetModuleTempo(param);
         break;
 
     case MT_CMD_SET_SPEED:

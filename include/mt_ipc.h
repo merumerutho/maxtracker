@@ -35,7 +35,7 @@
     X(PREVIEW_NOTE, 0x06, "param = note | (inst << 8)")                 \
     X(STOP_PREVIEW, 0x07, "cancel the active preview note")             \
     X(SET_MUTE,     0x08, "param = ch | (mute << 8)")                   \
-    X(SET_TEMPO,    0x09, "param = BPM")                                \
+    X(SET_TEMPO,    0x09, "param = Q10 tempo multiplier (0x400 = base tempo)") \
     X(SET_SPEED,    0x0A, "param = ticks per row")                      \
     X(REBUILD_DONE, 0x0B, "MAS header rebuilt; ARM7 re-resolve ptrs")
 
