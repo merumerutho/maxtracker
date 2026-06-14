@@ -26,6 +26,13 @@ const u32 waveform_zoom_levels[WAVEFORM_ZOOM_COUNT] = {
  * Uses CPU word stores for cache coherency with subsequent pixel writes. */
 static void clear_region(u8 *fb, int y_top, int height, u8 bg_color)
 {
+    /* Clamp to the 256x192 framebuffer. This is the one renderer that does
+     * a bulk word-store memset, so a caller passing y_top+height > 192 would
+     * write past the shadow buffer. Degrade to a clipped fill instead. */
+    if (y_top < 0) { height += y_top; y_top = 0; }
+    if (y_top >= 192 || height <= 0) return;
+    if (y_top + height > 192) height = 192 - y_top;
+
     u32 quad = ((u32)bg_color << 24) | ((u32)bg_color << 16) |
                ((u32)bg_color << 8)  | (u32)bg_color;
     u32 *dst = (u32 *)(fb + y_top * 256);
