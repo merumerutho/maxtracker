@@ -1,6 +1,6 @@
 # maxtracker -- Test Plan
 
-Parent: [DESIGN.md](../DESIGN.md)
+Parent: [README.md](../README.md)
 
 ---
 
@@ -34,7 +34,7 @@ Source files under test:
 #### T1.1.1 `test_song_init_defaults`
 
 **Verifies:** `song_init()` sets all fields to documented default values
-(DESIGN.md section 4, data_model.md section 4).
+(data_model.md section 4).
 
 ```
 call song_init()
@@ -42,13 +42,14 @@ assert song.initial_speed  == 6
 assert song.initial_tempo  == 125
 assert song.global_volume  == 64
 assert song.repeat_position == 0
-assert song.channel_count  == 8
+assert song.channel_count  == MT_MAX_CHANNELS   // 32 — all channels available
 assert song.freq_linear    == true
 assert song.xm_mode        == true
 assert song.order_count    == 1
 assert song.orders[0]      == 0
 assert song.patt_count     == 1
 assert song.inst_count     == 1
+assert song.samp_count     == 1                 // sample 1 (square wave) seeded
 assert strcmp(song.name, "untitled") == 0
 for i in 0..MT_MAX_CHANNELS-1:
     assert song.channel_volume[i]  == 64
@@ -71,11 +72,11 @@ pat = song.patterns[0]
 assert pat != NULL
 for row in 0..pat->nrows-1:
     for ch in 0..MT_MAX_CHANNELS-1:
-        assert pat->cells[row][ch].note  == NOTE_EMPTY  // 250
-        assert pat->cells[row][ch].inst  == 0
-        assert pat->cells[row][ch].vol   == 0
-        assert pat->cells[row][ch].fx    == 0
-        assert pat->cells[row][ch].param == 0
+        assert MT_CELL(pat, row, ch)->note  == NOTE_EMPTY  // 250
+        assert MT_CELL(pat, row, ch)->inst  == 0
+        assert MT_CELL(pat, row, ch)->vol   == 0
+        assert MT_CELL(pat, row, ch)->fx    == 0
+        assert MT_CELL(pat, row, ch)->param == 0
 call song_free()
 ```
 
@@ -92,7 +93,7 @@ assert pat != NULL
 assert pat->nrows == 64
 assert song.patt_count >= 6
 // All cells must be empty
-assert pat->cells[0][0].note == NOTE_EMPTY
+assert MT_CELL(pat, 0, 0)->note == NOTE_EMPTY
 // Second call returns same pointer
 pat2 = song_ensure_pattern(5)
 assert pat2 == pat
@@ -108,12 +109,12 @@ the existing pointer without modifying its contents.
 call song_init()
 pat = song.patterns[0]
 // Write data into cell [0][0]
-pat->cells[0][0].note = 60   // C-5
-pat->cells[0][0].inst = 1
+MT_CELL(pat, 0, 0)->note = 60   // C-5
+MT_CELL(pat, 0, 0)->inst = 1
 pat2 = song_ensure_pattern(0)
 assert pat2 == pat
-assert pat2->cells[0][0].note == 60
-assert pat2->cells[0][0].inst == 1
+assert MT_CELL(pat2, 0, 0)->note == 60
+assert MT_CELL(pat2, 0, 0)->inst == 1
 call song_free()
 ```
 
@@ -143,19 +144,21 @@ assert sizeof(MT_Cell) == 5
 
 #### T1.1.7 `test_mt_pattern_cell_addressing`
 
-**Verifies:** `MT_Pattern.cells[row][channel]` is correctly laid out as a
-contiguous array of `MT_MAX_ROWS * MT_MAX_CHANNELS` cells with no gaps.
+**Verifies:** the pattern's flat `cells[]` array (accessed via
+`MT_CELL(pat, row, channel)`) is correctly laid out as a contiguous array of
+`nrows * ncols` cells with no gaps. With the default song, `ncols ==
+MT_MAX_CHANNELS` (32), so the byte-stride math below holds.
 
 ```
 call song_init()
 pat = song.patterns[0]
 // Write a unique value at known positions
-pat->cells[0][0].note  = 10
-pat->cells[0][31].note = 20
-pat->cells[63][0].note = 30
-pat->cells[63][31].note = 40
+MT_CELL(pat, 0, 0)->note  = 10
+MT_CELL(pat, 0, 31)->note = 20
+MT_CELL(pat, 63, 0)->note = 30
+MT_CELL(pat, 63, 31)->note = 40
 // Verify raw byte access matches struct access
-u8 *base = (u8 *)&pat->cells[0][0]
+u8 *base = (u8 *)MT_CELL(pat, 0, 0)
 assert base[0] == 10                                            // [0][0].note
 assert base[(31) * 5] == 20                                     // [0][31].note
 assert base[(63 * MT_MAX_CHANNELS) * 5] == 30                  // [63][0].note
@@ -170,19 +173,19 @@ call song_free()
 #### T1.2.1 `test_clipboard_copy_single_cell`
 
 **Verifies:** `clipboard_copy_cell()` copies exactly one cell and sets
-`clipboard.valid`, `clipboard.rows == 1`, `clipboard.channels == 1`.
+`clipboard.type` (CLIP_CELLS when populated), `clipboard.cell_rows == 1`, `clipboard.cell_channels == 1`.
 
 ```
 call song_init()
 pat = song.patterns[0]
-pat->cells[5][2].note = 48
-pat->cells[5][2].inst = 3
+MT_CELL(pat, 5, 2)->note = 48
+MT_CELL(pat, 5, 2)->inst = 3
 clipboard_copy_cell(pat, 5, 2)
-assert clipboard.valid    == true
-assert clipboard.rows     == 1
-assert clipboard.channels == 1
-assert clipboard.data[0].note == 48
-assert clipboard.data[0].inst == 3
+assert clipboard.type == CLIP_CELLS
+assert clipboard.cell_rows     == 1
+assert clipboard.cell_channels == 1
+assert clipboard.cell_data[0].note == 48
+assert clipboard.cell_data[0].inst == 3
 call clipboard_free()
 call song_free()
 ```
@@ -198,18 +201,18 @@ pat = song.patterns[0]
 // Fill a 3-row x 2-channel block with known data
 for r in 0..2:
     for c in 0..1:
-        pat->cells[10+r][4+c].note = (r * 2 + c) + 60
-        pat->cells[10+r][4+c].inst = (r * 2 + c) + 1
+        MT_CELL(pat, 10+r, 4+c)->note = (r * 2 + c) + 60
+        MT_CELL(pat, 10+r, 4+c)->inst = (r * 2 + c) + 1
 clipboard_copy(pat, 10, 12, 4, 5)   // rows 10-12, channels 4-5
-assert clipboard.valid    == true
-assert clipboard.rows     == 3
-assert clipboard.channels == 2
-// Verify data order: clipboard.data[r * channels + c]
+assert clipboard.type == CLIP_CELLS
+assert clipboard.cell_rows     == 3
+assert clipboard.cell_channels == 2
+// Verify data order: clipboard.cell_data[r * channels + c]
 for r in 0..2:
     for c in 0..1:
         idx = r * 2 + c
-        assert clipboard.data[idx].note == (r * 2 + c) + 60
-        assert clipboard.data[idx].inst == (r * 2 + c) + 1
+        assert clipboard.cell_data[idx].note == (r * 2 + c) + 60
+        assert clipboard.cell_data[idx].inst == (r * 2 + c) + 1
 call clipboard_free()
 call song_free()
 ```
@@ -222,14 +225,14 @@ call song_free()
 call song_init()
 pat = song.patterns[0]
 // Write data, copy it
-pat->cells[0][0].note = 72
-pat->cells[0][0].inst = 5
+MT_CELL(pat, 0, 0)->note = 72
+MT_CELL(pat, 0, 0)->inst = 5
 clipboard_copy_cell(pat, 0, 0)
 // Clear origin, paste to a different location
-pat->cells[0][0].note = NOTE_EMPTY
+MT_CELL(pat, 0, 0)->note = NOTE_EMPTY
 clipboard_paste(pat, 20, 3)
-assert pat->cells[20][3].note == 72
-assert pat->cells[20][3].inst == 5
+assert MT_CELL(pat, 20, 3)->note == 72
+assert MT_CELL(pat, 20, 3)->inst == 5
 call clipboard_free()
 call song_free()
 ```
@@ -245,16 +248,16 @@ pat = song.patterns[0]   // nrows = 64
 // Copy a 4-row x 2-channel block
 for r in 0..3:
     for c in 0..1:
-        pat->cells[r][c].note = 60 + r
+        MT_CELL(pat, r, c)->note = 60 + r
 clipboard_copy(pat, 0, 3, 0, 1)
 // Paste at row 62 -- only 2 rows fit (62, 63)
 clipboard_paste(pat, 62, 0)
-assert pat->cells[62][0].note == 60
-assert pat->cells[63][0].note == 61
+assert MT_CELL(pat, 62, 0)->note == 60
+assert MT_CELL(pat, 63, 0)->note == 61
 // Rows 64+ are out of bounds -- verify no crash occurred
 // Paste at channel 31 -- only 1 channel fits
 clipboard_paste(pat, 0, 31)
-assert pat->cells[0][31].note == 60
+assert MT_CELL(pat, 0, 31)->note == 60
 call clipboard_free()
 call song_free()
 ```
@@ -267,13 +270,13 @@ replaces it.
 ```
 call song_init()
 pat = song.patterns[0]
-pat->cells[0][0].note = 60
+MT_CELL(pat, 0, 0)->note = 60
 clipboard_copy_cell(pat, 0, 0)
-assert clipboard.data[0].note == 60
-pat->cells[1][0].note = 72
+assert clipboard.cell_data[0].note == 60
+MT_CELL(pat, 1, 0)->note = 72
 clipboard_copy_cell(pat, 1, 0)
-assert clipboard.data[0].note == 72
-assert clipboard.rows == 1
+assert clipboard.cell_data[0].note == 72
+assert clipboard.cell_rows == 1
 call clipboard_free()
 call song_free()
 ```
@@ -305,18 +308,18 @@ call song_free()
 call song_init()
 call undo_init()
 pat = song.patterns[0]
-pat->cells[10][3].note = 60
-pat->cells[10][3].inst = 1
+MT_CELL(pat, 10, 3)->note = 60
+MT_CELL(pat, 10, 3)->inst = 1
 // Push state (captures note=60, inst=1)
 undo_push_cell(0, 10, 3)
 // Modify the cell
-pat->cells[10][3].note = 72
-pat->cells[10][3].inst = 5
+MT_CELL(pat, 10, 3)->note = 72
+MT_CELL(pat, 10, 3)->inst = 5
 // Pop should restore original
 result = undo_pop(&song)
 assert result == true
-assert pat->cells[10][3].note == 60
-assert pat->cells[10][3].inst == 1
+assert MT_CELL(pat, 10, 3)->note == 60
+assert MT_CELL(pat, 10, 3)->inst == 1
 call undo_free()
 call song_free()
 ```
@@ -333,19 +336,19 @@ pat = song.patterns[0]
 // Fill 3x2 block with known data
 for r in 0..2:
     for c in 0..1:
-        pat->cells[5+r][2+c].note = 48 + r*2 + c
+        MT_CELL(pat, 5+r, 2+c)->note = 48 + r*2 + c
 undo_push_block(0, 5, 7, 2, 3)   // rows 5-7, channels 2-3
 // Overwrite the block
 for r in 0..2:
     for c in 0..1:
-        pat->cells[5+r][2+c].note = 0
-        pat->cells[5+r][2+c].inst = 99
+        MT_CELL(pat, 5+r, 2+c)->note = 0
+        MT_CELL(pat, 5+r, 2+c)->inst = 99
 result = undo_pop(&song)
 assert result == true
 for r in 0..2:
     for c in 0..1:
-        assert pat->cells[5+r][2+c].note == 48 + r*2 + c
-        assert pat->cells[5+r][2+c].inst == 0  // was originally 0
+        assert MT_CELL(pat, 5+r, 2+c)->note == 48 + r*2 + c
+        assert MT_CELL(pat, 5+r, 2+c)->inst == 0  // was originally 0
 call undo_free()
 call song_free()
 ```
@@ -359,20 +362,20 @@ call song_init()
 call undo_init()
 pat = song.patterns[0]
 // Edit 1: write note at [0][0]
-pat->cells[0][0].note = NOTE_EMPTY
+MT_CELL(pat, 0, 0)->note = NOTE_EMPTY
 undo_push_cell(0, 0, 0)
-pat->cells[0][0].note = 60
+MT_CELL(pat, 0, 0)->note = 60
 // Edit 2: write note at [1][0]
-pat->cells[1][0].note = NOTE_EMPTY
+MT_CELL(pat, 1, 0)->note = NOTE_EMPTY
 undo_push_cell(0, 1, 0)
-pat->cells[1][0].note = 72
+MT_CELL(pat, 1, 0)->note = 72
 // Pop edit 2 first
 undo_pop(&song)
-assert pat->cells[1][0].note == NOTE_EMPTY
-assert pat->cells[0][0].note == 60  // edit 1 still in effect
+assert MT_CELL(pat, 1, 0)->note == NOTE_EMPTY
+assert MT_CELL(pat, 0, 0)->note == 60  // edit 1 still in effect
 // Pop edit 1
 undo_pop(&song)
-assert pat->cells[0][0].note == NOTE_EMPTY
+assert MT_CELL(pat, 0, 0)->note == NOTE_EMPTY
 call undo_free()
 call song_free()
 ```
@@ -390,9 +393,9 @@ pat = song.patterns[0]
 // Push 80 edits (exceeds ring size of 64)
 for i in 0..79:
     row = i % 64
-    pat->cells[row][0].note = NOTE_EMPTY
+    MT_CELL(pat, row, 0)->note = NOTE_EMPTY
     undo_push_cell(0, row, 0)
-    pat->cells[row][0].note = i + 1
+    MT_CELL(pat, row, 0)->note = i + 1
 // Should be able to pop the most recent 64
 count = 0
 while undo_pop(&song):
@@ -470,7 +473,7 @@ pat = loaded.patterns[0]
 assert pat != NULL
 for r in 0..pat->nrows-1:
     for c in 0..MT_MAX_CHANNELS-1:
-        assert pat->cells[r][c].note == NOTE_EMPTY
+        assert MT_CELL(pat, r, c)->note == NOTE_EMPTY
 // Cleanup
 song_free()   // frees original song.patterns
 // Free loaded patterns
@@ -488,14 +491,14 @@ cycle bit-perfectly.
 call song_init()
 pat = song.patterns[0]
 // Write diverse data: notes, note-off, note-cut, effects
-pat->cells[0][0]  = { .note = 48,        .inst = 1,  .vol = 40, .fx = 0,  .param = 0 }
-pat->cells[1][0]  = { .note = 60,        .inst = 2,  .vol = 0,  .fx = 15, .param = 0x20 }
-pat->cells[2][0]  = { .note = NOTE_CUT,  .inst = 0,  .vol = 0,  .fx = 0,  .param = 0 }
-pat->cells[3][0]  = { .note = NOTE_OFF,  .inst = 0,  .vol = 0,  .fx = 0,  .param = 0 }
-pat->cells[0][1]  = { .note = 72,        .inst = 3,  .vol = 0,  .fx = 1,  .param = 0x0A }
+*MT_CELL(pat, 0, 0)  = (MT_Cell){ .note = 48,        .inst = 1,  .vol = 40, .fx = 0,  .param = 0 }
+*MT_CELL(pat, 1, 0)  = (MT_Cell){ .note = 60,        .inst = 2,  .vol = 0,  .fx = 15, .param = 0x20 }
+*MT_CELL(pat, 2, 0)  = (MT_Cell){ .note = NOTE_CUT,  .inst = 0,  .vol = 0,  .fx = 0,  .param = 0 }
+*MT_CELL(pat, 3, 0)  = (MT_Cell){ .note = NOTE_OFF,  .inst = 0,  .vol = 0,  .fx = 0,  .param = 0 }
+*MT_CELL(pat, 0, 1)  = (MT_Cell){ .note = 72,        .inst = 3,  .vol = 0,  .fx = 1,  .param = 0x0A }
 // Repeated value (tests cache suppression + MF carry-forward)
-pat->cells[4][0]  = { .note = 48,        .inst = 1,  .vol = 40, .fx = 0,  .param = 0 }
-pat->cells[5][0]  = { .note = 48,        .inst = 1,  .vol = 40, .fx = 0,  .param = 0 }
+*MT_CELL(pat, 4, 0)  = (MT_Cell){ .note = 48,        .inst = 1,  .vol = 40, .fx = 0,  .param = 0 }
+*MT_CELL(pat, 5, 0)  = (MT_Cell){ .note = 48,        .inst = 1,  .vol = 40, .fx = 0,  .param = 0 }
 rc = mas_write("/tmp/test_data.mas", &song)
 assert rc == 0
 MT_Song loaded
@@ -505,21 +508,21 @@ assert rc == 0
 lpat = loaded.patterns[0]
 assert lpat != NULL
 // Compare every populated cell
-assert lpat->cells[0][0].note == 48
-assert lpat->cells[0][0].inst == 1
-assert lpat->cells[0][0].vol  == 40
-assert lpat->cells[1][0].fx   == 15
-assert lpat->cells[1][0].param == 0x20
-assert lpat->cells[2][0].note == NOTE_CUT
-assert lpat->cells[3][0].note == NOTE_OFF
-assert lpat->cells[0][1].note == 72
-assert lpat->cells[0][1].inst == 3
+assert MT_CELL(lpat, 0, 0)->note == 48
+assert MT_CELL(lpat, 0, 0)->inst == 1
+assert MT_CELL(lpat, 0, 0)->vol  == 40
+assert MT_CELL(lpat, 1, 0)->fx   == 15
+assert MT_CELL(lpat, 1, 0)->param == 0x20
+assert MT_CELL(lpat, 2, 0)->note == NOTE_CUT
+assert MT_CELL(lpat, 3, 0)->note == NOTE_OFF
+assert MT_CELL(lpat, 0, 1)->note == 72
+assert MT_CELL(lpat, 0, 1)->inst == 3
 // Cached values must be carried forward correctly
-assert lpat->cells[4][0].note == 48
-assert lpat->cells[4][0].inst == 1
-assert lpat->cells[4][0].vol  == 40
-assert lpat->cells[5][0].note == 48
-assert lpat->cells[5][0].inst == 1
+assert MT_CELL(lpat, 4, 0)->note == 48
+assert MT_CELL(lpat, 4, 0)->inst == 1
+assert MT_CELL(lpat, 4, 0)->vol  == 40
+assert MT_CELL(lpat, 5, 0)->note == 48
+assert MT_CELL(lpat, 5, 0)->inst == 1
 // Cleanup
 song_free()
 for i in 0..MT_MAX_PATTERNS-1:
@@ -536,11 +539,11 @@ call song_init()
 // Pattern 1: 128 rows
 pat1 = song_ensure_pattern(1)
 pat1->nrows = 128
-pat1->cells[127][0].note = 84
+MT_CELL(pat1, 127, 0)->note = 84
 // Pattern 2: 32 rows
 pat2 = song_ensure_pattern(2)
 pat2->nrows = 32
-pat2->cells[31][15].note = 36
+MT_CELL(pat2, 31, 15)->note = 36
 song.patt_count = 3
 song.order_count = 3
 song.orders[0] = 0
@@ -555,9 +558,9 @@ assert rc == 0
 assert loaded.patt_count == 3
 assert loaded.patterns[0]->nrows == 64
 assert loaded.patterns[1]->nrows == 128
-assert loaded.patterns[1]->cells[127][0].note == 84
+assert MT_CELL(loaded.patterns[1], 127, 0)->note == 84
 assert loaded.patterns[2]->nrows == 32
-assert loaded.patterns[2]->cells[31][15].note == 36
+assert MT_CELL(loaded.patterns[2], 31, 15)->note == 36
 // Cleanup
 song_free()
 for i in 0..MT_MAX_PATTERNS-1:
@@ -636,8 +639,8 @@ mas_load("/tmp/test_rle_empty.mas", &loaded)
 pat = loaded.patterns[0]
 for r in 0..pat->nrows-1:
     for c in 0..MT_MAX_CHANNELS-1:
-        assert pat->cells[r][c].note == NOTE_EMPTY
-        assert pat->cells[r][c].inst == 0
+        assert MT_CELL(pat, r, c)->note == NOTE_EMPTY
+        assert MT_CELL(pat, r, c)->inst == 0
 // Cleanup
 song_free()
 for i in 0..MT_MAX_PATTERNS-1:
@@ -654,15 +657,15 @@ call song_init()
 pat = song.patterns[0]
 // Same note on 16 consecutive rows in channel 0
 for r in 0..15:
-    pat->cells[r][0].note = 60
-    pat->cells[r][0].inst = 1
+    MT_CELL(pat, r, 0)->note = 60
+    MT_CELL(pat, r, 0)->inst = 1
 mas_write("/tmp/test_rle_cache.mas", &song)
 MT_Song loaded; memset(&loaded, 0, sizeof(loaded))
 mas_load("/tmp/test_rle_cache.mas", &loaded)
 lpat = loaded.patterns[0]
 for r in 0..15:
-    assert lpat->cells[r][0].note == 60
-    assert lpat->cells[r][0].inst == 1
+    assert MT_CELL(lpat, r, 0)->note == 60
+    assert MT_CELL(lpat, r, 0)->inst == 1
 // Cleanup
 song_free()
 for i in 0..MT_MAX_PATTERNS-1:
@@ -678,18 +681,18 @@ forcing re-emit on next occurrence).
 ```
 call song_init()
 pat = song.patterns[0]
-pat->cells[0][0].note = 60;  pat->cells[0][0].inst = 1
-pat->cells[1][0].note = NOTE_CUT
-pat->cells[2][0].note = NOTE_CUT   // must not be suppressed by cache
-pat->cells[3][0].note = 60;  pat->cells[3][0].inst = 1
+MT_CELL(pat, 0, 0)->note = 60;  MT_CELL(pat, 0, 0)->inst = 1
+MT_CELL(pat, 1, 0)->note = NOTE_CUT
+MT_CELL(pat, 2, 0)->note = NOTE_CUT   // must not be suppressed by cache
+MT_CELL(pat, 3, 0)->note = 60;  MT_CELL(pat, 3, 0)->inst = 1
 mas_write("/tmp/test_rle_noteoff.mas", &song)
 MT_Song loaded; memset(&loaded, 0, sizeof(loaded))
 mas_load("/tmp/test_rle_noteoff.mas", &loaded)
 lpat = loaded.patterns[0]
-assert lpat->cells[0][0].note == 60
-assert lpat->cells[1][0].note == NOTE_CUT
-assert lpat->cells[2][0].note == NOTE_CUT
-assert lpat->cells[3][0].note == 60
+assert MT_CELL(lpat, 0, 0)->note == 60
+assert MT_CELL(lpat, 1, 0)->note == NOTE_CUT
+assert MT_CELL(lpat, 2, 0)->note == NOTE_CUT
+assert MT_CELL(lpat, 3, 0)->note == 60
 // Cleanup
 song_free()
 for i in 0..MT_MAX_PATTERNS-1:
@@ -706,15 +709,15 @@ call song_init()
 pat = song.patterns[0]
 // Put different data on each channel at row 0
 for c in 0..31:
-    pat->cells[0][c].note = c + 36
-    pat->cells[0][c].inst = c + 1
+    MT_CELL(pat, 0, c)->note = c + 36
+    MT_CELL(pat, 0, c)->inst = c + 1
 mas_write("/tmp/test_rle_multichan.mas", &song)
 MT_Song loaded; memset(&loaded, 0, sizeof(loaded))
 mas_load("/tmp/test_rle_multichan.mas", &loaded)
 lpat = loaded.patterns[0]
 for c in 0..31:
-    assert lpat->cells[0][c].note == c + 36
-    assert lpat->cells[0][c].inst == c + 1
+    assert MT_CELL(lpat, 0, c)->note == c + 36
+    assert MT_CELL(lpat, 0, c)->inst == c + 1
 // Cleanup
 song_free()
 for i in 0..MT_MAX_PATTERNS-1:
@@ -729,16 +732,16 @@ param) roundtrips correctly.
 ```
 call song_init()
 pat = song.patterns[0]
-pat->cells[0][0] = { .note = 60, .inst = 5, .vol = 48, .fx = 15, .param = 0xFF }
+*MT_CELL(pat, 0, 0) = (MT_Cell){ .note = 60, .inst = 5, .vol = 48, .fx = 15, .param = 0xFF }
 mas_write("/tmp/test_rle_all.mas", &song)
 MT_Song loaded; memset(&loaded, 0, sizeof(loaded))
 mas_load("/tmp/test_rle_all.mas", &loaded)
 lpat = loaded.patterns[0]
-assert lpat->cells[0][0].note  == 60
-assert lpat->cells[0][0].inst  == 5
-assert lpat->cells[0][0].vol   == 48
-assert lpat->cells[0][0].fx    == 15
-assert lpat->cells[0][0].param == 0xFF
+assert MT_CELL(lpat, 0, 0)->note  == 60
+assert MT_CELL(lpat, 0, 0)->inst  == 5
+assert MT_CELL(lpat, 0, 0)->vol   == 48
+assert MT_CELL(lpat, 0, 0)->fx    == 15
+assert MT_CELL(lpat, 0, 0)->param == 0xFF
 // Cleanup
 song_free()
 for i in 0..MT_MAX_PATTERNS-1:
@@ -761,18 +764,18 @@ song.orders[1] = 1
 pat0 = song.patterns[0]
 pat1 = song.patterns[1]
 // Row 0, ch 0 of pattern 0: note + Cxx break to row 8 of next pattern
-pat0->cells[0][0].note = 60
-pat0->cells[0][0].inst = 1
-pat0->cells[0][0].fx   = 3    // effect C (pattern break in IT numbering)
-pat0->cells[0][0].param = 8   // break to row 8
+MT_CELL(pat0, 0, 0)->note = 60
+MT_CELL(pat0, 0, 0)->inst = 1
+MT_CELL(pat0, 0, 0)->fx   = 3    // effect C (pattern break in IT numbering)
+MT_CELL(pat0, 0, 0)->param = 8   // break to row 8
 // Row 8, ch 0 of pattern 1: note that must NOT be cache-suppressed
-pat1->cells[8][0].note = 72
-pat1->cells[8][0].inst = 2
+MT_CELL(pat1, 8, 0)->note = 72
+MT_CELL(pat1, 8, 0)->inst = 2
 mas_write("/tmp/test_rle_break.mas", &song)
 MT_Song loaded; memset(&loaded, 0, sizeof(loaded))
 mas_load("/tmp/test_rle_break.mas", &loaded)
-assert loaded.patterns[1]->cells[8][0].note == 72
-assert loaded.patterns[1]->cells[8][0].inst == 2
+assert MT_CELL(loaded.patterns[1], 8, 0)->note == 72
+assert MT_CELL(loaded.patterns[1], 8, 0)->inst == 2
 // Cleanup
 song_free()
 for i in 0..MT_MAX_PATTERNS-1:
@@ -783,14 +786,10 @@ for i in 0..MT_MAX_PATTERNS-1:
 
 ### 1.6 Envelope Encoding/Decoding Roundtrip Tests
 
-These tests require the envelope encoding (in `mas_write.c`) and decoding
-(in `mas_load.c`) to be fully implemented. Currently both are stubbed.
-The tests are written against the `MT_Envelope` / `MT_EnvelopeNode` types
-from data_model.md and the encoding formula from file_io.md section 3.3.
-
-**Note:** Until `MT_Instrument` and envelope serialization are implemented
-in the codebase, these tests serve as a specification and should be
-implemented alongside the feature.
+Envelope encoding (in `mas_write.c`, `write_envelope()`) and decoding
+(in `mas_load.c`) are **implemented**. The tests are written against the
+`MT_Envelope` / `MT_EnvelopeNode` types from data_model.md and the encoding
+formula from file_io.md section 3.3, and exercise the real serializer.
 
 #### T1.6.1 `test_envelope_encode_decode_linear`
 
@@ -1047,11 +1046,9 @@ free(pcm)
 ### 1.8 Sample Alignment and Loop Boundary Tests
 
 These tests verify the alignment logic described in file_io.md section 3.4,
-applied during MAS export. They require the sample serialization to be
-implemented in `mas_write.c`.
-
-**Note:** Like envelope tests, these are specification-level until
-`MT_Sample` serialization is implemented.
+applied during MAS export. Sample serialization (including the word-alignment
+and 4-byte wraparound handling) is **implemented** in `mas_write.c`, so these
+tests exercise the real writer.
 
 #### T1.8.1 `test_sample_loop_start_word_aligned_8bit`
 
@@ -1150,8 +1147,8 @@ assert buf[samp.length + 3] == 0
 All procedures assume:
 - no$gba (debugging/developer version) is installed and configured
 - The maxtracker `.nds` ROM has been built with `make` and is loadable
-- The emulated SD card image (or DLDI-patched FAT image) is available with
-  the `sd:/maxtracker/` directory structure
+- The emulated SD card image (or DLDI-patched FAT image) is available with a
+  `./data/` directory (the filesystem root) holding any `.mas` / `.wav` files
 - Breakpoints and memory watches are set via no$gba's debugger pane
 
 ---
@@ -1192,7 +1189,7 @@ boot). A song is loaded with at least 2 patterns and 8+ channels.
 **no$gba Debugger Checks:**
 
 - Set a watch on `cursor.row` at the address of the `EditorCursor cursor`
-  global (defined in `arm9/source/ui/pattern_view.c`). Verify it tracks the
+  global (defined in `arm9/source/ui/editor_state.c`). Verify it tracks the
   displayed row number.
 - Set a watch on `cursor.channel`. Verify it updates on L/R and LEFT/RIGHT.
 - Set a watch on `cursor.ch_group`. Verify it changes in steps of 8 on L/R.
@@ -1249,16 +1246,16 @@ row 0 on the Note column (`cursor.column == 0`). Octave = 4, instrument = 1.
 
 **Expected Results:**
 
-- Step 2: `cells[0][0].note == cursor.octave * 12 + cursor.semitone`
-  (= 48 for octave 4, semitone C). `cells[0][0].inst == 1`.
-- Step 5: `cells[1][0].note == 60` (octave 5, C). `cells[1][0].inst == 1`.
-- Step 6: `cells[2][0].note == NOTE_OFF` (255).
-- Step 7: `cells[3][0].note == NOTE_CUT` (254).
-- Step 8: `cells[0][0].note == NOTE_EMPTY` (250), `cells[0][0].inst == 0`.
+- Step 2: `MT_CELL(pat, 0, 0)->note == cursor.octave * 12 + cursor.semitone`
+  (= 48 for octave 4, semitone C). `MT_CELL(pat, 0, 0)->inst == 1`.
+- Step 5: `MT_CELL(pat, 1, 0)->note == 60` (octave 5, C). `MT_CELL(pat, 1, 0)->inst == 1`.
+- Step 6: `MT_CELL(pat, 2, 0)->note == NOTE_OFF` (255).
+- Step 7: `MT_CELL(pat, 3, 0)->note == NOTE_CUT` (254).
+- Step 8: `MT_CELL(pat, 0, 0)->note == NOTE_EMPTY` (250), `MT_CELL(pat, 0, 0)->inst == 0`.
 
 **no$gba Debugger Checks:**
 
-- Set a memory breakpoint on `song.patterns[0]->cells[0][0]` (5 bytes).
+- Set a memory breakpoint on `MT_CELL(song.patterns[0], 0, 0)` (5 bytes).
   After each A press, verify the correct note value is written.
 - After step 8, verify the cell is fully zeroed (note=250, inst/vol/fx/param=0).
 
@@ -1342,21 +1339,20 @@ specific tempo (e.g., 140), speed (e.g., 4), and order table.
 
 **Steps:**
 
-1. Press SHIFT + START to switch to the Disk screen (`SCREEN_DISK`).
-2. Navigate to `sd:/maxtracker/songs/`.
-3. Press X to save the current song. Enter filename `test_save.mas`.
-4. Confirm the save dialog.
-5. Verify the status message shows "Saved: test_save.mas (XX KB)".
-6. Modify the song: change tempo to 180, add notes to pattern 0.
-7. Return to Disk screen. Navigate to `test_save.mas`. Press A to load.
-8. Confirm the load dialog.
-9. Verify all fields match the state from before step 6.
+1. From the Song screen, SHIFT+UP to PROJECT, then A on the `>> Save` action
+   row. The song is written to `./data/song.mas` (there is no Disk-screen
+   save dialog; saves go directly from PROJECT).
+2. Verify the status message shows "Saved: ..." with the byte count.
+3. Modify the song: change tempo to 180, add notes to pattern 0.
+4. From PROJECT, A on `>> Load` to open the Disk browser (`SCREEN_DISK`,
+   rooted at `./data/`). Navigate to `song.mas`. Press A to load.
+5. Verify all fields match the state from before step 3.
 
 **Expected Results:**
 
-- Step 5: File is written to the emulated SD card. The return code from
+- Step 1: File is written to the emulated SD card. The return code from
   `mas_write()` is 0.
-- Step 9: After loading, the song model matches the saved state:
+- Step 5: After loading, the song model matches the saved state:
   - `song.initial_tempo == 140` (not 180)
   - `song.initial_speed == 4`
   - Pattern data matches what was saved
@@ -1504,21 +1500,21 @@ valid instrument/sample pair. Playback subsystem initialized.
 #### P2.7.1 Load a WAV Sample
 
 **Preconditions:** A valid WAV file (`kick.wav`, 16-bit mono, 44100 Hz)
-exists at `sd:/maxtracker/samples/kick.wav`. Press SHIFT + D-pad RIGHT
-to switch to the Sample screen (`SCREEN_SAMPLE`).
+exists at `./data/kick.wav`. Navigate to the Sample screen (`SCREEN_SAMPLE`)
+via SHIFT+RIGHT.
 
 **Steps:**
 
-1. Navigate to the file browser (or use the load function within the
-   Sample screen).
+1. On the Sample screen, A on the `>> Load .wav` action row to open the
+   disk browser scoped to this sample slot.
 2. Select `kick.wav` and press A to load.
 3. Verify the waveform is displayed on the top screen.
 4. Check the sample info display: format, length, sample rate.
 
 **Expected Results:**
 
-- Step 2: `wav_load()` returns `WAV_OK`. The sample data is allocated in
-  the sample pool. The status bar shows the sample name and size.
+- Step 2: `wav_load()` returns `WAV_OK`. The sample PCM is `malloc`'d (with
+  4 trailing wraparound bytes). The status bar shows the sample name and size.
 - Step 3: The waveform view shows the loaded audio data.
 - Step 4: Display shows `16-bit`, correct length in samples, and `44100 Hz`.
 
@@ -1527,7 +1523,7 @@ to switch to the Sample screen (`SCREEN_SAMPLE`).
 - Set a breakpoint on `wav_load()`. Verify the path argument is correct.
 - After `wav_load()` returns, check `out_bits == 16`, `out_rate == 44100`,
   `out_len > 0`.
-- Verify the sample pool usage increased by `out_len` bytes.
+- Verify resident sample memory (per `mt_mem_usage`) increased by `out_len` bytes.
 - Inspect the first few bytes of the allocated PCM data to verify they
   are non-zero (assuming the WAV is not silence).
 
@@ -1535,33 +1531,46 @@ to switch to the Sample screen (`SCREEN_SAMPLE`).
 
 ### 2.8 Screen Switching
 
-#### P2.8.1 All Six Screen Modes
+#### P2.8.1 Screen Mode Corridor
 
 **Preconditions:** maxtracker is running on the default Pattern screen.
 
+Navigation is the LSDJ "rooms-in-a-house" model: SHIFT+LEFT/RIGHT walk the
+depth corridor, SHIFT+UP/DOWN walk the vertical axis. B is **not** a
+screen-exit; only SELECT+direction switches screens. The Disk screen is not
+reachable by SHIFT+START — it opens only from PROJECT/SAMPLE action rows.
+
 **Steps:**
 
-1. Press SHIFT + D-pad UP -- switch to Instrument screen.
-2. Press SHIFT + D-pad DOWN -- switch to Song screen.
-3. Press SHIFT + D-pad LEFT -- switch to Mixer screen.
-4. Press SHIFT + D-pad RIGHT -- switch to Sample screen.
-5. Press SHIFT + START -- switch to Disk screen.
-6. Press B -- return to Pattern screen (from any non-Pattern screen).
-7. Repeat steps 1-6 rapidly (stress test for screen transitions).
+1. From Pattern overview, SHIFT+RIGHT walks deeper (Inside, then Instrument,
+   then Sample, then LFE, then LFE FX as you keep pressing SHIFT+RIGHT).
+2. SHIFT+LEFT reverses one step each press.
+3. From Pattern, SHIFT+UP jumps to Mixer; SHIFT+DOWN returns to the screen
+   it came from.
+4. From Song, SHIFT+UP enters PROJECT; SHIFT+DOWN (or SHIFT+LEFT) returns.
+5. From PROJECT, A on `>> Load` opens Disk; SHIFT+DOWN or B-at-root returns
+   to PROJECT.
+6. Repeat rapidly (stress test for screen transitions).
 
 **Expected Results:**
 
-| Step | Expected `current_screen` value |
-|------|---------------------------------|
-| 1 | `SCREEN_INSTRUMENT` (1) |
-| 2 | `SCREEN_SONG` (3) |
-| 3 | `SCREEN_MIXER` (4) |
-| 4 | `SCREEN_SAMPLE` (2) |
-| 5 | `SCREEN_DISK` (5) |
-| 6 | `SCREEN_PATTERN` (0) |
+The `ScreenMode` enum order (from `screen.h`) is:
 
+| Value | Mode |
+|-------|------|
+| 0 | `SCREEN_PATTERN` |
+| 1 | `SCREEN_INSTRUMENT` |
+| 2 | `SCREEN_SAMPLE` |
+| 3 | `SCREEN_LFE` |
+| 4 | `SCREEN_LFE_FX` |
+| 5 | `SCREEN_SONG` |
+| 6 | `SCREEN_MIXER` |
+| 7 | `SCREEN_DISK` |
+| 8 | `SCREEN_PROJECT` |
+
+- `current_screen` follows the corridor transitions above.
 - No visual glitches during transitions. Both screens update.
-- No crash during rapid switching (step 7).
+- No crash during rapid switching (step 6).
 
 **no$gba Debugger Checks:**
 
@@ -1622,7 +1631,7 @@ to switch to the Sample screen (`SCREEN_SAMPLE`).
 
 **Expected Results:**
 
-- `clipboard.data` is NULL after each `clipboard_free()`.
+- `clipboard.cell_data` is NULL after each `clipboard_free()`.
 - Heap usage does not grow across iterations.
 
 **no$gba Debugger Checks:**

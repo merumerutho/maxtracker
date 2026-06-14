@@ -1,6 +1,6 @@
 # maxtracker -- Coding Conventions
 
-Parent: [DESIGN.md](../DESIGN.md)
+Parent: [README.md](../README.md)
 
 ---
 
@@ -278,7 +278,7 @@ void module_do_thing(SomeType *t) { ... }
 
 **Group related functions together.** Don't intersperse a public API function with three helpers. Put all helpers above the public functions that use them (or below, if there are many helpers and the public API is small; pick whichever is easier to navigate).
 
-**One module = one purpose.** If a `.c` file is doing two unrelated things, split it. The project's modules average ~300-500 lines. The big exception is `main.c`, which is 1500+ lines and known to need splitting.
+**One module = one purpose.** If a `.c` file is doing two unrelated things, split it. The project's modules average ~300-500 lines. `main.c` used to be the big exception at ~1500 lines; the Phase A refactor brought it down to ~477 lines by moving logic into view files. A further Phase B split (`scene_manager.c` + `input_router.c`) is still on the table but not done.
 
 ---
 
@@ -417,4 +417,4 @@ If there genuinely isn't a precedent and you're introducing a new pattern, docum
 
 ---
 
-See also: [architecture.md](architecture.md), [hardware_quirks.md](hardware_quirks.md), [DEVELOPING.md](DEVELOPING.md), [DESIGN.md](../DESIGN.md).
+See also: [architecture.md](architecture.md), [hardware_quirks.md](hardware_quirks.md), [DEVELOPING.md](DEVELOPING.md).

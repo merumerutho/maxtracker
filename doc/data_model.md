@@ -1,6 +1,6 @@
 # maxtracker -- Data Model
 
-Parent: [DESIGN.md](../DESIGN.md)
+Parent: [README.md](../README.md)
 
 ---
 
@@ -8,7 +8,7 @@ Parent: [DESIGN.md](../DESIGN.md)
 
 The in-memory song model is optimized for **editing speed**, not storage efficiency. All data is uncompressed and directly addressable. MAS compression (pattern RLE, envelope delta encoding) only happens during save/export.
 
-Memory is managed through pool allocators for the two largest consumers (patterns and samples). Small fixed-size structures (instruments, song metadata) are statically allocated.
+Memory is managed with plain `malloc`/`free`. Patterns and sample PCM are heap-allocated on demand; instruments and song metadata live inline in the statically-allocated `MT_Song` struct. There is no custom pool allocator. Budgeting against the NDS's limited main RAM is tracked separately (see § 3).
 
 ---
 
@@ -156,7 +156,7 @@ correctly because the current loader simply doesn't read bits 4-7.
 typedef struct {
     bool active;                // false = unused sample slot
 
-    u8  *pcm_data;             // Pointer into sample pool (signed PCM)
+    u8  *pcm_data;             // malloc'd signed PCM (+4 wraparound bytes)
     u32 length;                 // Total length in samples (not bytes)
     u32 loop_start;             // Loop start in samples
     u32 loop_length;            // Loop length in samples (0 = no loop)
@@ -178,12 +178,26 @@ typedef struct {
                                 // 2026-04 when the on-screen QWERTY keyboard
                                 // (`text_input.c`) made names user-editable.
     bool drawn;                 // true if sample was drawn on touchscreen (vs loaded)
+
+    u8  bits;                   // Convenience alias for format: 8 or 16
 } MT_Sample;
 // ~64 bytes per sample header, 128 max = ~8KB for headers
-// PCM data is separate, in the sample pool
+// PCM data is separate, malloc'd
 ```
 
-### 2.7 MT_Song -- Top-Level Song
+### 2.7 MT_Groove -- Groove (Swing) Table
+
+```c
+#define MT_MAX_GROOVES      16
+#define MT_MAX_GROOVE_STEPS 16
+
+typedef struct {
+    u8 steps[MT_MAX_GROOVE_STEPS];  // per-step tick counts
+    u8 length;                      // active step count
+} MT_Groove;
+```
+
+### 2.8 MT_Song -- Top-Level Song
 
 ```c
 #define MT_MAX_PATTERNS 256
@@ -216,61 +230,75 @@ typedef struct {
     MT_Sample     samples[MT_MAX_SAMPLES];
     MT_Pattern   *patterns[MT_MAX_PATTERNS]; // NULL = empty pattern
 
+    // Groove (swing) table
+    MT_Groove grooves[MT_MAX_GROOVES];
+    u8        groove_count;
+
     // Flags for MAS export
     bool freq_linear;           // true = linear frequency mode (XM/IT)
     bool xm_mode;               // true = XM volume column semantics
     bool old_mode;              // true = MOD/S3M instrument mode
+    bool old_effects;           // MAS_HEADER_FLAG_OLD_EFFECTS (bit 1)
     bool link_gxx;              // true = shared Gxx memory
 } MT_Song;
 ```
 
 ---
 
-## 3. Memory Pools
+## 3. Memory Model and Budget Tracking
 
-### 3.1 Pattern Pool
+There are no pool allocators. Both of the large consumers use plain
+`malloc`/`free` straight from the C heap:
+
+- **Patterns** are allocated by `song_alloc_pattern()` / `song_ensure_pattern()`
+  (`arm9/source/core/song.c`) to exactly `MT_PATTERN_SIZE(nrows, ncols)` bytes
+  and freed by `song_alloc_pattern()` (when replacing) or `song_free()`.
+- **Sample PCM** is `malloc`'d by the WAV loader, the MAS loader, and the LFE
+  generators, with 4 trailing bytes for DS interpolation wraparound. It is
+  freed by `song_free()` and when a sample slot is overwritten or deleted.
+
+### 3.1 RAM Budget
+
+The NDS has 4 MB of main RAM. Rather than carving out fixed pools, maxtracker
+tracks how much of that budget is already resident and pre-flights variable-size
+loads against the remainder. The constants live in
+`arm9/source/core/memtrack.h`:
 
 ```c
-#define MT_PATTERN_POOL_SIZE  (640 * 1024)  // 640KB
+#define MT_RAM_TOTAL       (4 * 1024 * 1024)   // 4MB
+#define MT_RAM_RESERVED    (512 * 1024)         // 512KB for code+stack+BSS
+#define MT_RAM_SAFETY      (128 * 1024)         // 128KB headroom (transient buffers)
+#define MT_RAM_AVAILABLE   (MT_RAM_TOTAL - MT_RAM_RESERVED - MT_RAM_SAFETY)
+```
 
+`MT_RAM_AVAILABLE` is therefore ~3.36 MB. `MT_RAM_SAFETY` covers transient
+allocations (WAV load buffers, conversion temporaries, per-pattern temp buffers
+during MAS loading) that briefly coexist with the permanent ones.
+
+### 3.2 Usage snapshot and pre-flight checks
+
+`memtrack.c` walks the global song to compute a usage snapshot and to gate loads:
+
+```c
 typedef struct {
-    u8      memory[MT_PATTERN_POOL_SIZE];
-    size_t  used;           // bytes allocated
-    size_t  peak;           // high-water mark
-    int     count;          // patterns currently allocated
-} MT_PatternPool;
+    u32 patterns;       // total bytes in allocated patterns
+    u32 samples;        // total bytes in sample PCM data
+    u32 song_struct;    // sizeof(MT_Song)
+    u32 total;          // sum of all tracked allocations
+    u32 available;      // MT_RAM_AVAILABLE
+    u8  patt_count;     // number of allocated patterns
+    u8  samp_count;     // number of active samples
+} MT_MemUsage;
+
+void mt_mem_usage(MT_MemUsage *out);                 // current resident usage
+u32  mt_mem_estimate_mas(u8 patt_count, u32 sample_region_bytes); // load estimate
+u32  mt_mem_free_budget(void);                       // AVAILABLE - resident
+static inline bool mt_mem_check(u32 needed);         // needed <= AVAILABLE ?
 ```
 
-Allocation strategy: **simple bump allocator with free list**. Patterns are variable-size (depends on nrows, but width is fixed at 32 channels). When a pattern is deleted, its memory is added to a free list. When a new pattern is created, the free list is checked first (best-fit), then the bump pointer is advanced.
-
-Fragmentation is acceptable because patterns are relatively uniform in size (most are 64 rows = ~10KB). A compaction pass could be triggered on save if fragmentation exceeds a threshold.
-
-```c
-MT_Pattern *mt_pattern_alloc(MT_PatternPool *pool, u16 nrows);
-void        mt_pattern_free(MT_PatternPool *pool, MT_Pattern *pat);
-size_t      mt_pattern_pool_available(const MT_PatternPool *pool);
-```
-
-### 3.2 Sample Pool
-
-```c
-#define MT_SAMPLE_POOL_SIZE  (1536 * 1024)  // 1.5MB
-
-typedef struct {
-    u8      memory[MT_SAMPLE_POOL_SIZE];
-    size_t  used;
-    size_t  peak;
-    int     count;
-} MT_SamplePool;
-```
-
-Same allocation strategy as pattern pool. Sample data tends to be more variable in size (tiny drawn waveforms vs. long recordings), so fragmentation is more of a concern. The pool reports available space so the UI can warn before loading a sample that won't fit.
-
-```c
-u8   *mt_sample_alloc(MT_SamplePool *pool, u32 byte_size);
-void  mt_sample_free(MT_SamplePool *pool, u8 *data, u32 byte_size);
-size_t mt_sample_pool_available(const MT_SamplePool *pool);
-```
+`mt_mem_usage()` sums `MT_PATTERN_SIZE(nrows, ncols)` over allocated patterns and
+`length * bytes_per_sample` over active samples. The UI uses `mt_mem_free_budget()`
+to warn before loading a sample or song that would not fit.
 
 ---
 
@@ -285,22 +313,32 @@ A new empty song initializes to:
     .initial_tempo   = 125,
     .global_volume   = 64,
     .repeat_position = 0,
-    .channel_count   = 8,       // Default 8 channels
+    .channel_count   = 32,      // MT_MAX_CHANNELS — all 32 channels available
     .channel_volume  = { 64, ... },
     .channel_panning = { 128, ... },  // All center
     .order_count     = 1,
     .orders          = { 0 },   // One pattern in the order
     .inst_count      = 1,
-    .samp_count      = 0,
+    .samp_count      = 1,       // Sample 1 (square wave) is seeded
     .patt_count      = 1,
+    .groove_count    = 0,
     .freq_linear     = true,    // Linear frequency mode (XM standard)
     .xm_mode         = true,    // XM volume column semantics
     .old_mode        = false,
+    .old_effects     = false,
     .link_gxx        = false,
 }
 ```
 
-Pattern 0 is allocated with 64 rows, all cells empty. Instrument 1 is active with default settings (global_volume=128, no envelopes). No samples loaded.
+Pattern 0 is allocated with 64 rows, all cells empty.
+
+Instrument 1 (index 0) is active with `global_volume = 128`, `panning = 0xC0`
+(`0x80 | 64` = center stereo), and `sample = 1`; no envelopes.
+
+Sample 1 (index 0) is **seeded with a 256-sample square wave** so playback works
+out of the box: 8-bit (`format = 0`, `bits = 8`), `base_freq = 8363`,
+`default_volume = 64`, `panning = 0xC0`, forward loop over the whole sample,
+named "Square". `samp_count` is therefore 1, not 0.
 
 ---
 
@@ -342,13 +380,42 @@ Undo buffer is circular. Oldest entries are silently dropped when full. Only pat
 
 ## 7. Clipboard
 
+The clipboard is a **tagged union**: one global instance holds exactly one
+kind of payload at a time (a pattern cell block, order-list entries, or a
+full instrument). Paste operations check the tag and refuse mismatched
+content.
+
 ```c
+typedef enum {
+    CLIP_NONE = 0,
+    CLIP_CELLS,       // rectangular block of pattern cells
+    CLIP_ORDERS,      // order list entries (pattern references)
+    CLIP_INSTRUMENT,  // full instrument struct
+} ClipboardType;
+
+#define CLIP_ORDER_MAX 32
+
 typedef struct {
-    MT_Cell *data;      // malloc'd cell array
-    u16     rows;       // height of copied block
-    u8      channels;   // width of copied block
-    bool    valid;      // true if clipboard has content
+    ClipboardType type;
+
+    // CLIP_CELLS: malloc'd cell array [cell_rows * cell_channels]
+    MT_Cell *cell_data;
+    u16      cell_rows;
+    u8       cell_channels;
+
+    // CLIP_ORDERS: small inline buffer
+    u8  order_data[CLIP_ORDER_MAX];
+    int order_count;
+
+    // CLIP_INSTRUMENT: instrument struct (no PCM — just the reference)
+    MT_Instrument inst_data;
 } MT_Clipboard;
 ```
 
-One global clipboard. Copy captures a rectangular block of cells. Paste stamps it at the cursor position, clipping to pattern boundaries. In LSDJ style, copy and paste are instant (SELECT+A / SELECT+B).
+Cell copy captures a rectangular block; paste stamps it at the cursor,
+clipping to pattern boundaries. In LSDJ style, copy and paste are instant
+(SELECT+A / SELECT+B).
+
+A separate single-slot **note clipboard** (`MT_NoteClipboard`: note, inst,
+valid) backs the M8-style A-press note stamping and is independent of the
+tagged clipboard above.

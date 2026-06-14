@@ -1,6 +1,6 @@
 # maxtracker -- Developer Guide
 
-Parent: [DESIGN.md](../DESIGN.md)
+Parent: [README.md](../README.md)
 
 ---
 
@@ -16,7 +16,7 @@ If you want to understand *why* the code is structured the way it is, read [arch
 
 A music tracker for the Nintendo DS, in the tradition of LSDJ, M8, and Piggy Tracker. It edits and plays maxmod `.mas` files natively. Songs are kept in memory as a flat editable model and serialized to `.mas` only on save, which means edits are audible immediately during playback without a re-encode. The audio engine is a patched maxmod running on the DS's ARM7, talking to the editor on ARM9 through shared memory.
 
-The vision document is `DESIGN.md` in the repository root. Read its sections 1, 2, and 3 if you've never seen the project before; they cover the goals, the platform constraints, and the high-level architecture choice (the maxmod patch, the cross-CPU split, the LSDJ-style navigation model).
+The project overview lives in `README.md` at the repository root, and `doc/architecture.md` is the code-level architecture reference. Read those if you've never seen the project before; they cover the goals, the platform constraints, and the high-level architecture choice (the maxmod patch, the cross-CPU split, the LSDJ-style navigation model).
 
 ---
 
@@ -96,23 +96,28 @@ There are two test infrastructures in this project, and they cover different thi
 
 ### Host tests
 
-Located in `test/`, built with `make host-test`. Compiles four binaries:
+Located in `test/`. The `test/Makefile` builds **seven** binaries:
 
-- **`maxtracker_tests`** -- The main unit test runner. Links the host shim layer (`nds_shim.h`, `memtrack_stub.c`) with the pure-logic modules (`song.c`, `clipboard.c`, `undo.c`, `scale.c`, `mas_write.c`, `mas_load.c`) and the test harness in `arm9/source/test/test.c`. Runs ~50 test groups covering song initialization, clipboard operations, undo ring behavior, MAS roundtrip, instrument-sample mapping, panning encoding, groove tables, and scale navigation. As of this writing it produces 666 assertions.
-- **`mas_diff`** -- A roundtrip validation tool. Loads a `.mas` file, serializes it back, and byte-compares the result against the original. Used to catch any encoding regression in `mas_write.c` or decoding regression in `mas_load.c`.
+- **`maxtracker_tests`** -- The main unit test runner. Links the host shim layer (`nds_shim.h`, `memtrack_stub.c`) with the pure-logic modules (`song.c`, `clipboard.c`, `undo.c`, `scale.c`, `mas_write.c`, `mas_load.c`) and the test harness in `arm9/source/test/test.c`. The entry point is `mt_run_tests()`. Runs many test groups covering song initialization, clipboard operations, undo ring behavior, MAS roundtrip, instrument-sample mapping, panning encoding, groove tables, autosave, and scale navigation.
 - **`playback_cmp`** -- A tick-by-tick playback comparison tool. Compiles the maxmod engine on the host alongside `engine_stubs.c`, runs the same `.mas` file through both the original RLE pattern reader and the patched flat-cell reader, and asserts they produce identical engine state at every tick.
 - **`reader_cmp`** -- Similar to `playback_cmp` but focused on the pattern reader's flag computation alone, not the full engine.
+- **`mas_diff`** -- A roundtrip validation tool. Loads a `.mas` file, serializes it back, and byte-compares the result against the original. Catches encoding regressions in `mas_write.c` / decoding regressions in `mas_load.c`.
+- **`wav_test`** -- WAV loader round-trip coverage across supported bit depths and sample rates (`test/wav_test.c`).
+- **`filebrowser_test`** -- Exercises the file browser logic (`filebrowser.c`, `scroll_view.c`, `keybind.c`) on the host.
+- **`navigation_test`** -- Exercises the SHIFT-chord navigation adjacency map with screen/font/LFE stubbed.
 
-Run them with:
+Top-level make targets (defined in the top `Makefile`):
 
 ```sh
-make host-test                          # builds and runs maxtracker_tests
-make -C test playback_cmp               # builds playback_cmp
-./test/playback_cmp data/sample.mas 5000 # run with specific file and tick count
-make -C test run-playback-cmp           # runs playback_cmp against every .mas in data/BestOf
-make -C test mas_diff                   # builds mas_diff
-./test/mas_diff data/sample.mas         # compares roundtrip
+make host-test          # ALL host tests: unit suite + MAS-roundtrip / engine-divergence
+                        # corpus comparisons + the LFE DSP library tests
+make host-test-quick    # just the fast unit subset (test/Makefile `run`), no corpus / DSP
+make lfe-test           # the LFE DSP library suite alone (lib/lfe)
 ```
+
+Individual binaries can still be built/run directly via `test/Makefile`, e.g.
+`make -C test playback_cmp && ./test/playback_cmp data/sample.mas 5000`, or
+`make -C test mas_diff && ./test/mas_diff data/sample.mas`.
 
 The host test infrastructure is described in detail in [test_plan.md](test_plan.md). The shims that make ARM9 source compile on a host system are in `test/nds_shim.h` (provides `u8`/`u16`/`u32`, stubs FIFO and DMA), `test/mm_engine_shim.h` (provides maxmod engine globals when compiling the engine source), and `test/memtrack_stub.c` (provides a sentinel implementation of `mt_mem_estimate_mas` so the loader's memory check passes). If you add a new file to a host test target's source list, check whether it pulls in any new ARM-only headers and, if so, add the relevant stub to the shim.
 
@@ -136,7 +141,7 @@ static void test_my_thing(void)
 }
 ```
 
-Then add `MT_RUN(test_my_thing);` near the bottom of `mt_test_run_all()`. The next `make host-test` will compile and run it.
+Then add `MT_RUN(test_my_thing);` near the bottom of `mt_run_tests()`. The next `make host-test` (or `make host-test-quick`) will compile and run it.
 
 Tests should be deterministic, fast (under 10 ms each), and self-contained (set up state, exercise behavior, tear down). Avoid tests that depend on the order of other tests, on the file system, or on any external state. When you need to test loading or saving, the test shims handle the relevant FIFO/cache stubs but you still write to a real path; use the `TEST_MAS_PATH_*` constants in `test.c` so paths are consistent.
 
@@ -148,9 +153,9 @@ If your test doesn't fit cleanly into the existing harness (say, you need a more
 
 Once you've built the project and run it, the recommended reading order for understanding the code is:
 
-1. **`DESIGN.md` § 3 (Architecture Overview)** -- the ASCII diagram and the "Option B (patched maxmod)" decision. This gives you the cross-CPU model in 200 words.
+1. **`doc/architecture.md` § 3 (Architecture Overview)** -- the cross-CPU model and the "Option B (patched maxmod)" decision in a few hundred words.
 2. **`doc/architecture.md`** -- the full code-level architecture. Read sections 1 through 8 carefully; sections 9 through 14 are reference material you can skim.
-3. **`arm9/source/core/main.c`** -- the entry point. Read `main()` first (around line 1189) for the init sequence, then the frame loop (around line 1273) for the dispatch shape. Don't try to read the input handlers yet; they're 800+ lines and don't make sense until you know the data model.
+3. **`arm9/source/core/main.c`** -- the entry point (~477 lines after the Phase A refactor). Read `main()` first for the init sequence, then the frame loop for the dispatch shape. The remaining per-screen input handlers are short now that most logic lives in the view files.
 4. **`arm9/source/core/song.h`** -- the data model. Skim the type definitions (`MT_Cell`, `MT_Pattern`, `MT_Instrument`, `MT_Sample`, `MT_Song`).
 5. **`arm9/source/ui/editor_state.h`** -- the editor cursor. This is the second piece of state every view reads.
 6. **`include/mt_shared.h` and `include/mt_ipc.h`** -- the cross-CPU contract.
@@ -313,7 +318,7 @@ A quick orientation. For a per-file reference, see `module_reference.md` (planne
 
 ```
 maxtracker/
-├── DESIGN.md                  # high-level vision
+├── README.md                  # project overview
 ├── Makefile                   # top-level dispatcher
 ├── doc/                       # design + developer documentation
 │   ├── architecture.md        # code-level architecture (read this)
@@ -408,7 +413,7 @@ In rough priority order:
 
 A few things on the project's future-work list, captured here so you don't reinvent them.
 
-- **Splitting `main.c`** -- currently 1500+ lines. Will become `scene_manager.c` + `input_router.c` + a much smaller `main.c` once the project becomes a proper repository. See [architecture.md § 13](architecture.md).
+- **Splitting `main.c` (Phase B)** -- the Phase A refactor already brought it from ~1500 to ~477 lines by moving logic into view files. Phase B would split the remainder into `scene_manager.c` + `input_router.c` + an even smaller `main.c`. Still pending. See [architecture.md § 13](architecture.md).
 - **A UI/core facade** -- UI views currently call into `playback.c` and read `song.*` directly. A facade layer would centralize these calls. Not urgent at the current size; would help if multiple editor instances ever become a thing (e.g. for headless testing).
 - **Per-file documentation** -- `doc/module_reference.md` is planned for a future doc pass. The high-level architecture is documented here and in [architecture.md](architecture.md), but per-file detail is not.
 - **Effect-encoding test coverage** -- `mas_diff` catches roundtrip mismatches but doesn't check that specific effects produce specific audio results. A targeted test would help.
@@ -416,4 +421,4 @@ A few things on the project's future-work list, captured here so you don't reinv
 
 ---
 
-See also: [architecture.md](architecture.md), [hardware_quirks.md](hardware_quirks.md), [conventions.md](conventions.md), [DESIGN.md](../DESIGN.md), [data_model.md](data_model.md), [audio_engine.md](audio_engine.md), [file_io.md](file_io.md), [test_plan.md](test_plan.md).
+See also: [architecture.md](architecture.md), [hardware_quirks.md](hardware_quirks.md), [conventions.md](conventions.md), [data_model.md](data_model.md), [audio_engine.md](audio_engine.md), [file_io.md](file_io.md), [test_plan.md](test_plan.md).

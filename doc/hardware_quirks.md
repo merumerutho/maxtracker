@@ -1,6 +1,6 @@
 # maxtracker -- Hardware Quirks and NDS-Specific Rules
 
-Parent: [DESIGN.md](../DESIGN.md)
+Parent: [README.md](../README.md)
 
 ---
 
@@ -308,4 +308,4 @@ The hardware is unforgiving but the bugs are usually one of the patterns in this
 
 ---
 
-See also: [architecture.md](architecture.md), [DEVELOPING.md](DEVELOPING.md), [audio_engine.md](audio_engine.md), [DESIGN.md](../DESIGN.md).
+See also: [architecture.md](architecture.md), [DEVELOPING.md](DEVELOPING.md), [audio_engine.md](audio_engine.md).

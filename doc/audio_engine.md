@@ -1,6 +1,6 @@
 # maxtracker -- Audio Engine
 
-Parent: [DESIGN.md](../DESIGN.md)
+Parent: [README.md](../README.md)
 
 ---
 
@@ -36,17 +36,48 @@ Under a compile-time flag `#define MAXTRACKER_MODE`, `mmReadPattern` is replaced
 **Shared state (ARM9-writable, ARM7-readable):**
 
 ```c
-// Defined in mt_types.h, allocated by ARM9 in main RAM
+// Defined in include/mt_shared.h, allocated by ARM9 in main RAM.
+// cells is a FLAT array: cells[row * channel_count + ch], pointing
+// directly into the current MT_Pattern's cells[] flexible array member.
 typedef struct {
-    volatile MT_Cell (*cells)[32];  // Pointer to current pattern's cells[256][32]
+    volatile MT_Cell *cells;        // Flat current-pattern cell array (NULL = empty)
     volatile u16 nrows;             // Current pattern's row count
     volatile u8  channel_count;     // Active channel count
     volatile u8  active;            // 1 = maxtracker mode, 0 = standard MAS mode
+
+    volatile u8  playing;           // 1 = playing (written by ARM9 start/stop)
+    volatile u8  _pad_play[3];
+
+    // Playback position packed into one 32-bit store so ARM9 never reads a
+    // torn (tick,row,position). bits 7:0 = pos, 15:8 = row, 23:16 = tick.
+    volatile u32 pos_state;
+
+    volatile u32 mute_mask;         // bit N set = channel N muted
+
+    // Order + pattern tables: ARM7 resolves the next cells pointer itself
+    // on a pattern transition, with no FIFO round-trip.
+    u8 order_count;
+    u8 orders[MT_MAX_ORDERS];       // copy of song.orders[]
+    u8 patt_count;
+    MT_PatternEntry patterns[256];  // {cells, nrows} per pattern index
 } MT_SharedPatternState;
 
-// Single global instance, address communicated via FIFO
+// MT_PatternEntry: per-pattern lookup info for ARM7.
+typedef struct {
+    volatile MT_Cell *cells;        // flat cell array (NULL = empty)
+    volatile u16      nrows;
+    u16               pad;
+} MT_PatternEntry;
+
+// Single global instance, address communicated via FIFO (MT_CMD_SET_SHARED).
 extern MT_SharedPatternState *mt_shared;
 ```
+
+Position is packed/unpacked with the `MT_POS_PACK` / `MT_POS_POSITION` /
+`MT_POS_ROW` / `MT_POS_TICK` helpers in `mt_shared.h`. The cells pointer is a
+flat 1-D array indexed as `cells[row * channel_count + ch]`; the patched
+`mmReadPattern` does that index arithmetic itself rather than relying on a
+fixed `[256][32]` declaration.
 
 **Patched mmReadPattern:**
 
@@ -61,7 +92,7 @@ IWRAM_CODE ARM_CODE mm_bool mmReadPattern(mpl_layer_information *mpp_layer)
     mm_word update_bits = 0;
     mm_module_channel *module_channels = mpp_channels;
 
-    const MT_Cell *row_data = mt_shared->cells[row];
+    const MT_Cell *row_data = &mt_shared->cells[row * mt_shared->channel_count];
 
     for (int ch = 0; ch < mt_shared->channel_count && ch < mpp_nchannels; ch++)
     {
@@ -148,7 +179,7 @@ When `mt_shared->active == 0`, the patched function falls through to `mmReadPatt
 
 maxmod's sequencer needs more than just pattern data. It needs:
 
-- **Tempo and speed**: Set via `mmSetModuleTempo()` and ARM7 direct writes to `mmLayerMain.speed`.
+- **Tempo and speed**: Tempo is set via `mmSetModuleTempo()` (ARM7 receives `MT_CMD_SET_TEMPO` carrying a Q10 multiplier and calls it). Speed (ticks/row) has **no** runtime API: `MT_CMD_SET_SPEED` is currently an unimplemented no-op on ARM7, so speed changes come only through pattern effect Axx.
 - **Pattern row count**: `mt_shared->nrows` is read by the sequencer to know when a pattern ends.
 - **Order table / song position**: The sequencer needs to know which pattern to play next.
 - **Instrument and sample data**: The effect processor and mixer need instrument envelopes and sample PCM.
@@ -191,7 +222,7 @@ This hybrid approach avoids rewriting the instrument and sample loading code in 
 ┌──────────────────────────────────────────────┐
 │ Patched mmReadPattern                        │
 │  - Ignores the stub pattern data             │
-│  - Reads from mt_shared->cells[row][ch]      │
+│  - Reads from mt_shared->cells[row*ncols+ch] │
 │  - ARM9 updates mt_shared->cells pointer     │
 │    when sequencer advances to next pattern    │
 └──────────────────────────────────────────────┘
@@ -199,18 +230,22 @@ This hybrid approach avoids rewriting the instrument and sample loading code in 
 
 ### 3.2 Rebuilding the MAS Header
 
-The minimal MAS header must be rebuilt when:
+The minimal MAS header is rebuilt by `playback_rebuild_mas()` in `playback.c`.
+There is **no** granular per-section rebuild: the function stops playback if
+running, calls `build_mas_buffer()` to regenerate the whole buffer from the
+current song, and (if it was playing) resumes from the saved order position.
 
-| Event | What changes | Rebuild scope |
-|-------|-------------|---------------|
-| Instrument parameters changed | Envelope data, note map | Instrument section only |
-| Sample loaded/drawn/deleted | Sample headers (point updated) | Sample section (fast, headers only) |
-| Channel count changed | Header flags | Full header |
-| Tempo/speed changed | Can be set via mmSetModuleTempo | No rebuild needed |
-| Order table changed | Sequence array | Header only (fast) |
-| Pattern added/removed | Pattern stubs + offset table | Pattern section (cheap) |
+| Event | What changes | Action |
+|-------|-------------|--------|
+| Instrument parameters changed | Envelope data, note map | `playback_rebuild_mas()` (full rebuild) |
+| Sample loaded/drawn/deleted | Sample headers (point updated) | `playback_rebuild_mas()` (full rebuild) |
+| Channel count changed | Header flags | `playback_rebuild_mas()` (full rebuild) |
+| Tempo changed | Q10 multiplier | `playback_set_tempo()` → `MT_CMD_SET_TEMPO`, no rebuild |
+| Order table changed | Sequence array | `playback_rebuild_mas()` (full rebuild) |
+| Pattern added/removed | Pattern stubs + offset table | `playback_rebuild_mas()` (full rebuild) |
 
-All rebuilds are fast (<1ms). The MAS buffer contains only metadata and sample headers; PCM data is referenced via `point` pointers, not copied.
+The rebuild is cheap because the MAS buffer contains only metadata and sample
+headers; PCM data is referenced via `point` pointers, not copied.
 
 ---
 
@@ -223,16 +258,16 @@ maxtracker uses `FIFO_USER_08` (same as MAXMXDS's `FIFO_XMX`) for custom command
 ### 4.2 Command Encoding
 
 ```c
-#define MT_CMD(cmd, param)  (((u32)(cmd) << 24) | ((param) & 0x00FFFFFF))
-#define MT_CMD_TYPE(val)    ((val) >> 24)
-#define MT_CMD_PARAM(val)   ((val) & 0x00FFFFFF)
+#define MT_MKCMD(cmd, param)  ((((u32)(cmd)) << 24) | ((u32)(param) & 0x00FFFFFFu))
+#define MT_CMD_TYPE(val)      (((val) >> 24) & 0xFFu)
+#define MT_CMD_PARAM(val)     ((val) & 0x00FFFFFFu)
 ```
 
 ### 4.3 ARM9 -> ARM7 Commands
 
 | Command | Code | Parameter | Description |
 |---------|------|-----------|-------------|
-| MT_CMD_PLAY | 0x01 | order position | Start playback from this order position |
+| MT_CMD_PLAY | 0x01 | pos \| (row<<8) | Start playback at this order position and row |
 | MT_CMD_STOP | 0x02 | -- | Stop playback |
 | MT_CMD_SET_SHARED | 0x03 | -- | Followed by fifoSendAddress with MT_SharedPatternState* |
 | MT_CMD_SET_MAS | 0x04 | -- | Followed by fifoSendAddress with MAS buffer* |
@@ -240,30 +275,37 @@ maxtracker uses `FIFO_USER_08` (same as MAXMXDS's `FIFO_XMX`) for custom command
 | MT_CMD_PREVIEW_NOTE | 0x06 | note\|inst<<8 | Play a single note for preview (without affecting sequencer) |
 | MT_CMD_STOP_PREVIEW | 0x07 | -- | Stop preview note |
 | MT_CMD_SET_MUTE | 0x08 | ch\|mute<<8 | Mute/unmute a channel |
-| MT_CMD_SET_TEMPO | 0x09 | tempo | Set BPM (direct write) |
-| MT_CMD_SET_SPEED | 0x0A | speed | Set ticks per row (direct write) |
+| MT_CMD_SET_TEMPO | 0x09 | Q10 tempo multiplier | `0x400` = base tempo. ARM9 converts from absolute BPM; ARM7 calls `mmSetModuleTempo()` |
+| MT_CMD_SET_SPEED | 0x0A | ticks per row | **Unimplemented no-op** on ARM7; speed changes come via effect Axx |
 | MT_CMD_REBUILD_DONE | 0x0B | -- | MAS header has been rebuilt; ARM7 should re-resolve pointers |
 
 ### 4.4 ARM7 -> ARM9 Commands
 
 | Command | Code | Parameter | Description |
 |---------|------|-----------|-------------|
-| MT_CMD_TICK | 0x80 | pos\|row<<8\|tick<<16 | Current playback position (sent each tick) |
-| MT_CMD_PATTERN_END | 0x81 | next_order_pos | Pattern ended, ARM9 should update mt_shared->cells for next pattern |
+| MT_CMD_TICK | 0x80 | pos \| (row<<8) | Current playback position, sent on tick 0 of each row. The tick travels in `mt_shared->pos_state`, **not** in this param. |
+| MT_CMD_PATTERN_END | 0x81 | next_order_pos | Notifies ARM9 that the order position changed (ARM9 uses it to follow the cursor); ARM7 itself resolves the next pattern's cells |
 | MT_CMD_SONG_END | 0x82 | -- | Song reached end (order 0xFF) |
 
 ### 4.5 Pattern Advance Protocol
 
-When the sequencer reaches the end of a pattern:
+Pattern transitions are resolved **on ARM7**, using the order/pattern tables in
+`MT_SharedPatternState` — there is no FIFO round-trip in the hot path. This
+avoids a race where the cells pointer could change underneath a tick callback
+(see `feedback_pattern_transition_ipc`).
 
-1. ARM7 sends `MT_CMD_PATTERN_END` with the next order position.
-2. ARM9 receives this in the FIFO handler (runs in VBlank or via IRQ).
-3. ARM9 looks up `song.orders[next_pos]` to get the next pattern index.
-4. ARM9 updates `mt_shared->cells` to point to `song.patterns[next_idx]->cells`.
-5. ARM9 updates `mt_shared->nrows` to the new pattern's row count.
-6. ARM9 calls `DC_FlushRange(mt_shared, sizeof(*mt_shared))`.
+When the sequencer crosses into a new order position:
 
-This must complete before the next tick (worst case: 1 tick at 255 BPM, speed 1 = ~3.9ms). Since the operation is just pointer updates + cache flush, it takes <0.1ms.
+1. ARM7 sees `pos` change in its tick callback.
+2. ARM7 indexes `mt_shared->orders[pos]` to get the next pattern index, then
+   reads `mt_shared->patterns[pattern_index]` for the new `cells` pointer and
+   `nrows`, and updates its local view directly.
+3. ARM7 sends `MT_CMD_PATTERN_END` to ARM9 as a notification only (so the
+   editor can follow the playback position); ARM9 does not need to push a new
+   cells pointer back.
+
+ARM9 populates `orders[]` and `patterns[]` (and flushes the cache) when playback
+starts and whenever the song changes via `playback_rebuild_mas()`.
 
 ---
 

@@ -1,6 +1,6 @@
 # maxtracker -- File I/O
 
-Parent: [DESIGN.md](../DESIGN.md)
+Parent: [README.md](../README.md)
 
 ---
 
@@ -13,22 +13,29 @@ File types handled:
 | Extension | Direction | Description |
 |-----------|-----------|-------------|
 | `.mas` | Read + Write | Native format. Load existing maxmod songs; save/export completed songs. |
-| `.wav` | Read | Load samples from WAV files. |
-| `.raw` | Read + Write | Raw signed 8-bit PCM for drawn waveforms. |
+| `.wav` | Read + Write | Load samples from WAV files; export samples via the SAMPLE view. |
 
 ---
 
-## 2. Directory Structure on SD Card
+## 2. Directory Structure
+
+The filesystem root is **`./data/`** (relative to the `.nds`), set as
+`fs_browse_root` after `fatInitDefault()` succeeds. On emulators that embed
+data via NitroFS the root falls back to `./`. There is no `sd:/maxtracker/...`
+tree and no `songs/` / `samples/` split.
 
 ```
-sd:/
-└── maxtracker/
-    ├── songs/          # .mas files (user songs)
-    ├── samples/        # .wav and .raw files
-    └── backup/         # auto-save backups
+./data/
+├── song.mas            # default save target (PROJECT >> Save)
+├── song_NN.mas         # >> Save As slots (01-99)
+├── .swap.mas           # transient load-backup (written before a load, removed after)
+└── backup/             # created lazily on first autosave
+    └── autosave.mas
 ```
 
-On first run, maxtracker creates this directory structure if it doesn't exist.
+The only directory maxtracker creates is `./data/backup`, and it is created
+lazily (`mkdir("./data/backup", 0777)`) just before the first autosave write.
+Nothing else is created up front.
 
 ---
 
@@ -116,9 +123,15 @@ Before writing sample data to MAS, apply the same alignment rules as mmutil (doc
 
 ### 3.5 Export Buffer
 
-MAS serialization uses a temporary buffer (up to 256KB) in the sample pool's headroom or a separate malloc. The buffer is written to, then flushed to disk in one `fwrite` call. This avoids many small writes which are slow on FAT/SD.
+MAS serialization uses a single `malloc`'d buffer of `WRITE_BUF_SIZE` (256 KB).
+Everything — header, instruments, samples (with PCM), patterns — is assembled
+into that one buffer and flushed to disk in a single `fwrite` call. There is no
+chunked streaming.
 
-For songs with large sample data (>256KB), the serializer writes in chunks: header + instruments first, then each sample's PCM data streamed directly to disk.
+If the assembled module would exceed 256 KB, `mas_write()` does **not** stream;
+it frees the buffer and returns `-2` (a hard error). The other failure codes are
+`-1` (`fopen` failed) and `-3` (short write). This 256 KB cap is the practical
+song-size limit for the current writer.
 
 ---
 
@@ -149,12 +162,12 @@ Loads an existing `.mas` file into the `MT_Song` editing model. This reuses the 
     ├─ For each sample:
     │   -> Read sample info
     │   -> Read NDS sample header
-    │   -> Allocate from sample pool
+    │   -> malloc PCM buffer (+4 wraparound bytes)
     │   -> Copy PCM data (strip alignment padding)
     │   -> Populate MT_Sample
     │
     ├─ For each pattern:
-    │   -> Allocate from pattern pool
+    │   -> malloc the MT_Pattern (via song_alloc_pattern)
     │   -> Decompress RLE pattern data into flat MT_Cell array
     │      (using MF flag carry-forward logic -- critical!)
     │   -> Populate MT_Pattern
@@ -232,72 +245,44 @@ detaching them was the source of a use-after-free fixed in 2026-04.
 The `lib/lfe/` audio output path can also issue `wav_save_mono16`
 calls for sample-export scenarios.
 
-For large WAV files on DS (>256KB), loading is done in streaming fashion -- read a chunk, convert, write to pool, repeat. This avoids needing a full temporary copy in RAM.
-
 ---
 
-## 6. Sample Drawing Save/Load
+## 6. Auto-Save
 
-Drawn waveforms (created on the touchscreen) can be saved to SD card for reuse.
-
-### 6.1 Format: Raw Signed 8-bit PCM
-
-```
-File: sd:/maxtracker/samples/mywave.raw
-Contents: N bytes of signed 8-bit PCM data (-128 to +127)
-No header. Length = file size.
-```
-
-This is the simplest possible format. The sample rate is assumed to be 8363 Hz (middle-C standard) unless the user changes it.
-
-### 6.2 Save
-
-```c
-int mt_raw_save(const char *path, const MT_Sample *sample);
-```
-
-Writes `sample->length` bytes of 8-bit PCM data. If the sample is 16-bit, it's downsampled to 8-bit for the raw file.
-
-### 6.3 Load
-
-```c
-int mt_raw_load(const char *path, MT_Sample *sample, MT_SamplePool *pool);
-```
-
-Reads the entire file as signed 8-bit PCM. Sets `base_freq = 8363`, `default_volume = 64`, `panning = 128`.
-
----
-
-## 7. Auto-Save
-
-maxtracker periodically auto-saves the current song to `sd:/maxtracker/backup/autosave.mas`. The interval is configurable (default: every 5 minutes of editing activity, not wall-clock time).
+maxtracker periodically auto-saves the current song to
+`./data/backup/autosave.mas`. The backup directory is created lazily
+(`mkdir`) the first time an autosave fires. The autosave loop lives at the
+bottom of the frame loop in `main.c` and is driven by a frame-counted timer
+plus the `autosave_dirty` flag.
 
 Auto-save only triggers if:
-- The song has been modified since last save/auto-save.
-- The user is not currently in the middle of an edit operation.
+- The song has been modified since last save/auto-save (`autosave_dirty`).
 - The SD card is writable.
 
-The auto-save file is overwritten each time. On startup, if `autosave.mas` exists and is newer than the last manually saved file, the user is prompted to recover it.
+The auto-save file is overwritten each time. There is **no** startup
+recovery prompt: `autosave.mas` is written for safety but the app does not
+detect it or offer to restore it on launch. Recovering an autosave is a manual
+load from the disk browser.
 
 ---
 
-## 8. File Browser
+## 7. File Browser
 
-### 8.1 Navigation
+### 7.1 Navigation
 
 Standard directory browser using POSIX `opendir`/`readdir`. Sorted alphabetically with directories first. D-pad for scrolling, A to enter directory or load file, B to go up one level. **B at the configured root** is clamped: pressing B in an empty root no longer walks above it (an earlier bug let the user lock themselves out of the SHIFT+DOWN exit).
 
-### 8.2 File Type Detection
+### 7.2 File Type Detection
 
-By extension: `.mas` files are offered for full song load; `.wav` and `.raw` files are offered for sample import.
+By extension: `.mas` files are offered for full song load; `.wav` files are offered for sample import.
 
-The destination sample slot is chosen by the disk-screen `.wav` branch in `main.c` per the routing globals in section 8.4: either the slot the SAMPLE view was on, or (legacy fallback) `cursor.instrument - 1`.
+The destination sample slot is chosen by the disk-screen `.wav` branch in `main.c` per the routing globals in section 7.4: either the slot the SAMPLE view was on, or (legacy fallback) `cursor.instrument - 1`.
 
-### 8.3 Path Management
+### 7.3 Path Management
 
 Current directory is tracked as a string. Maximum path depth: 8 levels. Maximum filename display: 28 characters (truncated with `...` if longer). The browser caps at `FB_MAX_ENTRIES` (64) per directory; excess entries are silently dropped (known limitation, not surfaced to the user yet).
 
-### 8.4 Disk-screen routing globals
+### 7.4 Disk-screen routing globals
 
 The disk screen is no longer reachable by a global SHIFT+START shortcut. It is opened only by on-screen action rows in PROJECT view (`>> Load`, `>> Save`, `>> Save As`) and SAMPLE view (`>> Load .wav`, `>> Save .wav`). To make the cancel/exit path return to the right view without a parameter on `screen_set_mode`, two globals in `main.c` carry the routing context:
 
@@ -309,7 +294,7 @@ extern u8         sample_load_target;   // 1-based sample slot for .wav route
 
 Each opener sets both before calling `screen_set_mode(SCREEN_DISK)`. The exit paths (B-at-root in `main.c`, SHIFT+DOWN in `navigation.c`, post-load auto-return) honor and reset them. See `doc/architecture.md section 9b` for the full convention and the per-opener table.
 
-### 8.5 Naming flow (text input modal)
+### 7.5 Naming flow (text input modal)
 
 Filenames for the SAMPLE view's `>> Save .wav` action are derived
 from `./data/sample_XX.wav` where XX is the 1-based sample slot. The
@@ -321,8 +306,10 @@ RAM only, a documented v1 tradeoff.
 
 ---
 
-## 9. Error Handling
+## 8. Error Handling
 
-All file operations return error codes. Errors are displayed as a one-line status message on the bottom screen (e.g., "Error: SD card not found", "Error: out of sample memory", "Saved: mysong.mas (45KB)"). The message auto-clears after 3 seconds.
+All file operations return error codes. Errors are displayed as a one-line status message on the bottom screen (e.g., "Error: SD card not found", "Error: out of sample memory", "Saved: mysong.mas (45KB)"). The message auto-clears after a few seconds.
 
-Critical errors (SD card removed during write) trigger a full-screen error message that requires button acknowledgment before returning to the editor.
+There is no full-screen critical-error screen and no button-acknowledgment
+modal: every file error — including a failed or short write — surfaces only as
+that one-line status message.

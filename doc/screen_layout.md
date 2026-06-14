@@ -1,6 +1,6 @@
 # maxtracker -- Screen Layout Specification
 
-Parent: [DESIGN.md](../DESIGN.md)
+Parent: [README.md](../README.md)
 
 ---
 
@@ -9,7 +9,7 @@ Parent: [DESIGN.md](../DESIGN.md)
 Both screens use **MODE_5_2D** with an **8bpp bitmap** background layer (BG2, `BgType_Bmp8`, `BgSize_B8_256x256`). All rendering is software-drawn to the bitmap framebuffer using a custom pixel font. No tile-based console is used.
 
 This gives complete per-pixel control, allowing:
-- Custom font sizes (4x6 primary, not limited to 8x8 tile grid)
+- Custom font sizes (BIG 6x8 default, SMALL 4x6 alternative; not limited to an 8x8 tile grid)
 - Colored text with per-character foreground color
 - Waveform/envelope drawing on the same surface as text
 - Row highlighting with background color fills
@@ -56,18 +56,27 @@ Index  Color            Usage
 
 ## 2. Font Design
 
-### 2.1 Primary Font: 4x6
+### 2.1 Font Modes: BIG 6x8 (default) and SMALL 4x6
 
-A custom monospaced bitmap font, 4 pixels wide by 6 pixels tall. Each glyph fits in a 4x6 pixel cell with no inter-character spacing (spacing is built into the glyph -- rightmost column is typically blank for separation).
-
-Character set: ASCII 0x20-0x7F (96 glyphs). Stored as a 1-bit bitmap (96 * 4 * 6 = 2304 bits = 288 bytes).
+There are two runtime-selectable font modes (`font.c` / `font.h`). The
+**default is BIG (6x8)**; SMALL (4x6) is the denser alternative. `font_set_mode()`
+switches between them and updates the globals `FONT_W`, `FONT_H`, `FONT_COLS`,
+`FONT_ROWS`:
 
 ```
-Grid capacity: 256/4 = 64 columns, 192/6 = 32 rows
-Total: 64 x 32 = 2048 character cells
+BIG   (default): 6x8 glyphs -> 256/6 = 42 columns, 192/8 = 24 rows  (42 x 24)
+SMALL          : 4x6 glyphs -> 256/4 = 64 columns, 192/6 = 32 rows  (64 x 32)
 ```
 
-The 4x6 font covers digits, uppercase letters, common symbols (`-`, `#`, `.`, `/`, `|`, `=`). Lowercase letters are mapped to uppercase (tracker tradition).
+Each glyph fits its cell with no inter-character spacing (spacing is built into
+the glyph). The font covers digits, uppercase letters, and common symbols
+(`-`, `#`, `.`, `/`, `|`, `=`). Lowercase letters are mapped to uppercase
+(tracker tradition).
+
+**Important:** the pixel-column maps in the layout diagrams below (the
+`0123...63` rulers) describe the **SMALL 64-column grid only**. In the default
+BIG mode there are 42 columns, so the absolute column numbers differ; treat the
+maps as the SMALL-mode reference.
 
 ### 2.2 Glyph Examples (4x6)
 
@@ -83,22 +92,32 @@ The 4x6 font covers digits, uppercase letters, common symbols (`-`, `#`, `.`, `/
 
 ### 2.3 Rendering Function
 
-```c
-// Draw a single character at pixel position (px, py) with palette color index
-void mt_putc(u8 *framebuffer, int px, int py, char ch, u8 color);
+The real API (`font.h`) takes character-cell `(col, row)` coordinates, not raw
+pixels, except `font_putc` which also takes cell coordinates:
 
-// Draw a string starting at character grid position (col, row)
-void mt_puts(u8 *framebuffer, int col, int row, const char *str, u8 color);
+```c
+// Draw a single character at character-cell (col, row) with palette color index
+void font_putc(u8 *fb, int col, int row, char ch, u8 color);
+
+// Draw a string starting at character-cell (col, row); returns end column
+int  font_puts(u8 *fb, int col, int row, const char *str, u8 color);
 
 // Draw a string with per-character color array
-void mt_puts_colored(u8 *framebuffer, int col, int row,
-                     const char *str, const u8 *colors, int len);
+void font_puts_colored(u8 *fb, int col, int row,
+                       const char *str, const u8 *colors, int len);
 
-// Fill a character-cell rectangle with a background color
-void mt_fill_row(u8 *framebuffer, int row, int col_start, int col_end, u8 bg_color);
+// Fill a character-cell row span with a background color
+void font_fill_row(u8 *fb, int row, int col_start, int col_end, u8 bg);
+
+// printf-style draw, and full-screen clear to a background color
+int  font_printf(u8 *fb, int col, int row, u8 color, const char *fmt, ...);
+void font_clear(u8 *fb, u8 bg);
 ```
 
-Each `mt_putc` call writes 4*6 = 24 pixels. A full screen redraw (2048 chars) writes 49,152 pixels. At ~1 cycle per pixel write (ARM9 cached), this takes ~0.7ms. Full screen redraws are fast enough for 60fps.
+Each glyph write touches `FONT_W * FONT_H` pixels (48 in BIG, 24 in SMALL). A
+full screen redraw writes 256*192 = 49,152 pixels regardless. At ~1 cycle per
+pixel write (ARM9 cached), this takes ~0.7ms. Full screen redraws are fast
+enough for 60fps.
 
 In practice, only changed rows need redrawing. The pattern grid scrolls by row, so typically 1-3 rows change per frame during playback.
 
@@ -152,7 +171,7 @@ Pixel-exact:
   │...│        28 data rows visible                              │
 29│1B | --- --| --- --| --- --| --- --| --- --| --- --| --- --| │
   ├──────────────────────────────────────────────────────────────┤
-30│Step:01  Note:C-4  Ins:01  Vol:--  Fx:--/--   Mem:640K free  │ footer
+30│Step:01  Note:C-4  Ins:01  Vol:--  Fx:--/--   Mem: free RAM  │ footer
 31│STOP  Row:00  Pos:00/12  Pat:03  ----  [SELECT+dir:screens]  │ transport
   └──────────────────────────────────────────────────────────────┘
 ```
@@ -284,28 +303,25 @@ The envelope area (144 pixels tall, 240 pixels wide) is a bitmap touch zone. Nod
 - Double-tap node: delete it
 - [V][P][F] tabs at top-right: switch between Volume/Panning/Pitch (if the font is on the screen, they're touch targets)
 
-### 4.3 Sample Mode -- Waveform Drawing
+### 4.3 Sample Mode -- Metadata Panel (read-only)
+
+The Sample bottom screen no longer hosts a drawing canvas. Waveform drawing and
+synthesis were moved into the LFE Waveform Editor (`SCREEN_LFE`); the Sample
+bottom screen is now a read-only metadata panel.
 
 ```
   ┌──────────────────────────────────────────────────────────────┐
-  │ DRAW SAMPLE  Len:256   [SINE][SAW ][SQR ][NOIS][CLR ]      │ row 0-1
+  │ SAMPLE 01  "kick"                                           │ row 0
   ├──────────────────────────────────────────────────────────────┤
-  │+127│                                                        │
-  │    │           ████                                         │
-  │    │         ██    ██                                       │
-  │    │       ██        ██                              ██████ │ bitmap area
-  │   0│─────██────────────██───────────────────────████────────│ 144 px tall
-  │    │   ██                ██                  ██             │
-  │    │ ██                    ██             ██                │
-  │-128│█                        ██████████                    │
-  ├──────────────────────────────────────────────────────────────┤
-  │ Stylus draws waveform.  Presets seed shape, then edit.      │ row 26-27
-  │ Rate:8363Hz  Bits:8  Loop:full                              │ row 28-29
-  │ A:save to instrument  B:cancel  X:zoom  L/R:prev/next samp │ row 30-31
+  │ Length....... 4096                                          │ row 2
+  │ Rate......... 22050 Hz                                      │ row 3
+  │ Bits......... 8                                             │ row 4
+  │ Loop......... 1024 - 3072                                   │ row 5
   └──────────────────────────────────────────────────────────────┘
 ```
 
-The drawing area maps 256 horizontal pixels to 256 samples (1:1 for single-cycle). Vertical: 144 pixels maps to -128..+127 range. The stylus draws directly -- wherever you touch becomes the sample value at that position. Dragging paints continuously.
+The drawing/synthesis UI (touch canvas, generator tabs, preset shapes) lives in
+the LFE editor; see `arm9/source/ui/lfe/` and ui_ux.md §7a/§7b.
 
 ### 4.4 Mixer Mode -- Faders
 

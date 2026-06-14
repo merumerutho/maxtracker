@@ -1,6 +1,6 @@
 # maxtracker -- Architecture
 
-Parent: [DESIGN.md](../DESIGN.md)
+Parent: [README.md](../README.md)
 
 ---
 
@@ -96,7 +96,7 @@ Two specific consequences of this mapping that aren't obvious:
 
 **The view is allowed to query `playback.c`.** A view like `pattern_view` calls `playback_get_mute_mask()` to color muted channels. This is technically a model-to-view leak, but `playback.c` is the canonical source of mute state at runtime, and threading it through some intermediate object would be ceremony without value at this scale. The rule is: views may *read* from `playback.c`, but should not *call* anything that mutates audio state. Starting and stopping playback is the controller's job.
 
-**The controller is concentrated in `main.c`.** All input dispatch lives in one file. This is why `main.c` is currently 1500+ lines and why it's marked for a future split into `scene_manager.c` and `input_router.c`. When you make that split, the rule of thumb is: code that decides *which screen we're on* belongs in scene management; code that interprets buttons *for the current screen* belongs in the per-screen handlers (which already live in the view files in some cases, e.g. `instrument_view_input`).
+**The controller is concentrated in `main.c`.** Input dispatch lives in one file. After the Phase A refactor `main.c` is ~477 lines (most per-screen logic moved into the view files); the proposed Phase B split into `scene_manager.c` and `input_router.c` is still pending. When you make that split, the rule of thumb is: code that decides *which screen we're on* belongs in scene management; code that interprets buttons *for the current screen* belongs in the per-screen handlers (which already live in the view files in most cases, e.g. `instrument_view_input`).
 
 ---
 
@@ -112,7 +112,7 @@ A one-paragraph orientation per file. A more detailed per-file reference will li
 - **`undo.h/.c`** -- Fixed-depth ring buffer of pattern edits. Each entry is a malloc'd snapshot of the cells about to be modified. `count_rows` is u16 because patterns can be 256 rows tall and a u8 truncates to zero on full-pattern blocks. The ring is 64 entries deep (`MT_UNDO_DEPTH`).
 - **`scale.h/.c`** -- Music theory utilities: note name lookup, semitone math, scale-aware key navigation. Pure functions, no state.
 - **`memtrack.h/.c`** -- Memory usage estimation and the sentinel-based "do you have enough RAM" check used by the loader. The check is soft; it sets a warning flag but doesn't block.
-- **`main.c`** -- Entry point, frame loop, scene dispatch, every per-screen input handler that hasn't been moved into its view file. The biggest file in the project. Marked for future splitting.
+- **`main.c`** -- Entry point, frame loop, scene dispatch, and the per-screen input handlers that haven't been moved into their view files. After the Phase A refactor it is ~477 lines (down from ~1500); a further Phase B split into `scene_manager.c` + `input_router.c` is still a future idea, not yet done.
 
 ### I/O (`arm9/source/io/`)
 
@@ -414,7 +414,7 @@ If you find yourself reaching for one of these, the project is probably trying t
 
 Two surgical fixes are queued for whenever the project becomes a proper repository:
 
-**Splitting `main.c`.** It's 1500+ lines and conflates scene management, per-screen input handling, file I/O orchestration, and the autosave timer. The natural split is `scene_manager.c` (the dispatch switch and scene transitions), `input_router.c` (the per-screen handlers, including `handle_input_pattern` and the disk-screen logic), and a much smaller `main.c` that just initializes subsystems and runs the loop. The cost is high (many functions to relocate, plenty of opportunity to break input handling) and the benefit is medium (easier to navigate, easier to test individual handlers). It hasn't happened yet because there's no triggering reason.
+**Splitting `main.c` (Phase B).** The Phase A refactor already moved most logic into view files, bringing `main.c` down from ~1500 to ~477 lines. The remaining Phase B idea is to split what's left — scene management, the per-screen input handlers, file I/O orchestration, and the autosave timer — into `scene_manager.c` (the dispatch switch and scene transitions), `input_router.c` (the per-screen handlers, including `handle_input_pattern` and the disk-screen logic), and an even smaller `main.c` that just initializes subsystems and runs the loop. The cost is moderate (functions to relocate, opportunity to break input handling) and the benefit is medium (easier to navigate, easier to test individual handlers). It hasn't happened yet because there's no triggering reason.
 
 **A UI/core facade.** Right now views read directly from `song`, `cursor`, and `playback_*` query functions. A facade would centralize those reads behind a smaller surface area, which would help if the project ever needs multiple "instances" of the editor (e.g. for testing, or for a hypothetical headless mode). It would not help if the project stays single-instance, which it currently is. Keep this in mind but don't build it preemptively.
 
@@ -440,4 +440,4 @@ A few terms used throughout the maxtracker codebase that might be unfamiliar.
 
 ---
 
-See also: [hardware_quirks.md](hardware_quirks.md), [DEVELOPING.md](DEVELOPING.md), [conventions.md](conventions.md), [data_model.md](data_model.md), [audio_engine.md](audio_engine.md), [file_io.md](file_io.md), [DESIGN.md](../DESIGN.md).
+See also: [hardware_quirks.md](hardware_quirks.md), [DEVELOPING.md](DEVELOPING.md), [conventions.md](conventions.md), [data_model.md](data_model.md), [audio_engine.md](audio_engine.md), [file_io.md](file_io.md).

@@ -1,6 +1,6 @@
 # maxtracker -- UI/UX Specification
 
-Parent: [DESIGN.md](../DESIGN.md)
+Parent: [README.md](../README.md)
 
 ---
 
@@ -36,8 +36,14 @@ extras as ergonomic modifiers without breaking the LSDJ muscle-memory core.
 | **X** | *(no equiv)* | **ALT modifier** -- page jump, step size |
 | **Y** | *(no equiv)* | **OPT modifier** -- octave, instrument select |
 
-The SHIFT button is configurable at compile time via `MT_SHIFT_KEY` (default:
-`KEY_SELECT`). It can be reassigned to X, Y, or R if preferred.
+The SHIFT button (and the other action keys) are configurable at **runtime**
+through the keybind preset system, not a compile-time constant. Eight semantic
+actions (Confirm, Back, Primary, Secondary, Left/Right Shoulder, Start, Shift)
+are mapped to physical NDS keys by the active preset; views read them through
+the `MT_KEY_*` macros (e.g. `MT_KEY_SHIFT`) which index `mt_keymap[]`. Presets
+are defined in `arm9/source/ui/presets/<stem>.def` (Default, NDS Fat, NDS Lite)
+and selected in PROJECT settings via `keybind_set_preset()`. See
+`reference_keybind_system` and `arm9/source/ui/keybind.h`.
 
 ### 2.2 SHIFT Combos (LSDJ "rooms-in-a-house" model)
 
@@ -75,9 +81,9 @@ buttons in PROJECT and SAMPLE views).
 
 A is always "do something" (place, adjust). B is always "clear/delete" (never
 navigation). There is no "edit mode" toggle; holding A while pressing d-pad
-adjusts values live. The action happens on A **release**: if d-pad was used
-while A was held, it was an edit (no stamp). If A was tapped without d-pad,
-it stamps.
+adjusts values live. Editing is **press/repeat-driven**, not release-driven:
+a tap of A (no d-pad) stamps immediately, and A held with d-pad nudges the
+value on each press/repeat. Nothing waits for the A release.
 
 Note placement does **not** auto-advance the cursor (LSDJ style). Use d-pad
 to move to the next row manually.
@@ -153,15 +159,22 @@ Changes based on current screen mode. Shows supplementary information and touch-
 
 ## 4. Screen Modes
 
-Seven screen modes. SHIFT+LEFT/RIGHT navigate the depth hierarchy
-(Song <-> Pattern Overview <-> Inside Column <-> Instrument <-> Sample).
+**Nine** screen modes, declared in `screen.h`: PATTERN, INSTRUMENT, SAMPLE,
+LFE, LFE_FX, SONG, MIXER, DISK, PROJECT. SHIFT+LEFT/RIGHT navigate the depth
+hierarchy; the sound-editing corridor now extends past Sample into the LFE
+Waveform Editor and the LFE FX room:
+
+```
+  ... Instrument ←→ Sample ←→ LFE (Waveform Editor) ←→ LFE FX
+```
+
 SHIFT+UP/DOWN navigate a vertical axis. B is never used for navigation
 between screens -- only SELECT+direction.
 
 ```
   Depth navigation (SHIFT+LEFT / SHIFT+RIGHT):
 
-    Song ←→ Pattern Overview ←→ Inside Column ←→ Instrument ←→ Sample
+    Song ←→ Pattern Overview ←→ Inside Column ←→ Instrument ←→ Sample ←→ LFE ←→ LFE FX
 
   Vertical navigation (SHIFT+UP / SHIFT+DOWN):
 
@@ -188,7 +201,9 @@ between screens -- only SELECT+direction.
 |------|-----------|---------------|
 | **Pattern** | Pattern grid editor | Quick info: current instrument params, channel mute toggles, mini song position |
 | **Instrument** | Instrument parameter list (all numeric fields) | Envelope editor (touchscreen: tap/drag nodes to shape curves) |
-| **Sample** | Sample waveform display (zoomable) | Waveform drawing canvas (touchscreen: draw with stylus) + loop point adjustment |
+| **Sample** | Sample waveform display (zoomable) + action rows | Read-only sample metadata (length, rate, bits, loop). Drawing/synthesis lives in LFE. |
+| **LFE** | Waveform Editor: tabbed generator UI (Tone / Drum / Synth / FM4 / Braids / Draw) | Per-generator parameter faders / draw canvas (touch) |
+| **LFE FX** | FX room: pick one of 9 destructive effects to apply to the sample | Effect parameters + touch range selection |
 | **Song** | Order table (arrangement view) | Pattern operations: clone, insert, delete, swap |
 | **Mixer** | Channel activity display (levels, notes playing) | Fader strips: touch-drag per-channel volume and panning |
 | **Project** | Song-level settings (tempo, speed, volume, channels) | Song statistics summary |
@@ -302,9 +317,9 @@ There is no "enter edit mode" step. A is always an action key.
 - **B**: Clear instrument field.
 
 **Volume / Effect / Param columns (columns 2-4):**
-- **A held + UP/DOWN**: Increment/decrement high nibble.
-- **A held + LEFT/RIGHT**: Increment/decrement low nibble.
-  Releasing A finalizes the edit; no confirm step needed.
+- **A held + UP/DOWN**: Increment/decrement high nibble (applied per press/repeat).
+- **A held + LEFT/RIGHT**: Increment/decrement low nibble (applied per press/repeat).
+  Each nibble change takes effect immediately; there is no release/confirm step.
 - **A** (tap, no d-pad): Advance cursor by step size.
 - **B**: Clear the field (set to 0).
 
@@ -425,33 +440,63 @@ fields, and (if playing) calls `playback_rebuild_mas()` to refresh the
 audio engine. Without the two-tap, a stray B+A could free PCM that
 playback or the LFE draft is still dereferencing.
 
-### 7.2 Bottom Screen: Waveform Drawing (Touch)
+### 7.2 Bottom Screen: Sample Metadata (read-only)
 
-For drawn samples (single-cycle or short waveforms):
+The drawing canvas and the `[Sine][Saw][Square][Noise]` preset buttons that used
+to live here have been moved into the **LFE Waveform Editor** (see §7a). The
+Sample view's bottom screen is now a **read-only metadata panel** showing the
+selected slot's name, length, sample rate, bit depth, and loop info:
 
 ```
-   Draw Sample  Length: 256  [Sine] [Saw] [Square] [Noise]
-   ┌──────────────────────────────────────────────┐
-   │                                               │
-   │           ████                                │
-   │         ██    ██                              │
-   │       ██        ██                     ██████ │
-   │─────██────────────██───────────────████───────│
-   │   ██                ██           ██           │
-   │ ██                    ██       ██             │
-   │█                        ██████                │
-   └──────────────────────────────────────────────┘
-   Draw with stylus. Preset buttons at top. A:Confirm B:Cancel
+   SAMPLE 01  "kick"
+   ────────────────────────────────
+   Length....... 4096
+   Rate......... 22050 Hz
+   Bits......... 8
+   Loop......... 1024 - 3072
 ```
 
-- Stylus draws directly onto the waveform
-- Preset buttons seed basic shapes (sine, saw, square, noise)
-- The drawn waveform becomes a sample in the sample pool
-- Can be saved to SD card as a raw file for reuse
+To create or edit waveforms, SELECT+RIGHT into the LFE editor.
 
-For loaded samples (WAV from SD):
-- Bottom screen shows loop point adjustment: drag L/R markers on a zoomed waveform region
-- Touch to set the loop start/end visually
+---
+
+## 7a. LFE Waveform Editor (SCREEN_LFE)
+
+Reached by SELECT+RIGHT one step past the Sample screen (and exited with
+SELECT+LEFT, which honors the dirty-draft confirmation before closing). This is
+where all sample synthesis and free-hand drawing now lives — the work the
+Sample bottom screen used to do.
+
+The top screen is a **tabbed generator UI**; the current tab's parameter list
+renders as fader rows, and the bottom screen hosts that generator's controls
+(or, for Draw, the touch canvas). The six tabs (`wv_gen_names[]` in
+`waveform_view.c`) are:
+
+| Tab | Generator |
+|-----|-----------|
+| **Tone** | Test-tone / single-waveform oscillator (build-gated) |
+| **Drum** | Preset percussion synth (tone waveshape + drive + LFO) |
+| **Synth** | Subtractive synth with oscillator-combine modes |
+| **FM4** | 4-operator FM synth (operator / matrix / LFO subpages) |
+| **Braids** | Braids-style macro oscillator, 18 shapes |
+| **Draw** | Free-hand touchscreen waveform canvas |
+
+Editing is **non-destructive** (the draft/commit model): generators write into a
+draft buffer; SEL+A commits the draft to the sample, SEL+B restores the original.
+See `reference_wfe_ui_architecture`, `reference_wfe_draft_commit`, and the tab
+files under `arm9/source/ui/lfe/gen/`.
+
+## 7b. LFE FX Room (SCREEN_LFE_FX)
+
+Reached by SELECT+RIGHT one step past the LFE editor. It applies **destructive**
+DSP effects to the current sample over a touch-selectable range. There are nine
+effects (`arm9/source/ui/lfe/fx/`):
+
+`NORMALIZE`, `TRIM`, `FADE / ENVELOPE` (envelope shaper), `FILTER` (LP/HP/BP/Notch),
+`DELAY`, `DISTORTION`, `OTT`, `REVERSE`, and `BITCRUSH`.
+
+Each effect exposes its parameters as fader rows; the range to process is set by
+touch. See `project_wfe_fx_room` and `project_next_fx`.
 
 ---
 
@@ -491,7 +536,7 @@ For loaded samples (WAV from SD):
    [Delete Pattern]  Remove pattern (if unused in orders)
    [Swap]            Swap two pattern numbers
    ────────────────────
-   Patterns: 12/256 used    Memory: 120KB/640KB
+   Patterns: 12/256 used    Free RAM: 3.1 MB / 3.36 MB
 ```
 
 Touch buttons for pattern management. Shows memory usage.
@@ -728,19 +773,27 @@ bytes; the widget snapshots up to 64 bytes internally for CANCEL restore.
 
 ## 14. Color Palette
 
-Minimal, high-contrast palette suitable for DS LCD:
+The palette is defined by the `PAL_*` constants in `arm9/source/ui/screen.h`
+and filled in `screen.c` (`RGB15` values). Index numbers below are the actual
+`PAL_*` ordinals; do not assume an ad-hoc scheme.
 
-| Index | Color | Usage |
-|-------|-------|-------|
-| 0 | Black (#000000) | Background |
-| 1 | Dark gray (#404040) | Inactive text, separators |
-| 2 | Light gray (#A0A0A0) | Normal text |
-| 3 | White (#FFFFFF) | Highlighted/cursor text |
-| 4 | Green (#00FF00) | Active/playing row |
-| 5 | Cyan (#00FFFF) | Note values |
-| 6 | Yellow (#FFFF00) | Instrument numbers |
-| 7 | Blue (#4080FF) | Effect commands |
-| 8 | Magenta (#FF40FF) | Effect parameters |
-| 9 | Red (#FF0000) | Warnings, muted channels |
-| 10 | Dark green (#004000) | Every-4th-row highlight |
-| 11 | Orange (#FF8000) | Selection/block highlight |
+| Index | Constant | Usage |
+|-------|----------|-------|
+| 0 | `PAL_BG` | Background (near-black) |
+| 1 | `PAL_ROW_EVEN` | Row background, even rows (dark blue tint) |
+| 2 | `PAL_ROW_BEAT` | Row background, beat rows (every 4th) |
+| 3 | `PAL_ROW_CURSOR` | Cursor row background (vivid blue) |
+| 4 | `PAL_DIM` | Dim gray (empty cells, separators) |
+| 5 | `PAL_GRAY` | Gray (row numbers, secondary text) |
+| 6 | `PAL_TEXT` | Light gray normal text |
+| 7 | `PAL_WHITE` | White (highlighted / cursor text) |
+| 8 | `PAL_NOTE` | Cyan — note values |
+| 9 | `PAL_INST` | Yellow — instrument numbers |
+| 10 | `PAL_EFFECT` | Blue — effect commands |
+| 11 | `PAL_PARAM` | Magenta — effect parameters |
+| 12 | `PAL_PLAY` | Green — playing indicator |
+| 13 | `PAL_RED` | Red — mute / warning |
+| 14 | `PAL_ORANGE` | Orange — selection |
+| 15 | `PAL_PLAY_BG` | Dark green — playing-row background |
+| 16 | `PAL_HEADER_BG` | Dark purple — header bar background |
+| 17 | `PAL_SEL_BG` | Dark amber — selection highlight background |
