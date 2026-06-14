@@ -267,7 +267,11 @@ void mixer_view_input(u32 down, u32 held)
             int pan = (int)song.channel_panning[ch];
             if (rep & KEY_LEFT)  pan -= 16;
             if (rep & KEY_RIGHT) pan += 16;
-            song.channel_panning[ch] = (u8)clamp_pan(pan);
+            u8 np = (u8)clamp_pan(pan);
+            if (np != song.channel_panning[ch]) {
+                song.channel_panning[ch] = np;
+                mt_mark_song_modified();
+            }
         }
         return;  /* Y modifier consumes d-pad this frame */
     }
@@ -300,7 +304,11 @@ void mixer_view_input(u32 down, u32 held)
             if (rep & KEY_DOWN)  vol -= 1;
             if (rep & KEY_RIGHT) vol += 4;
             if (rep & KEY_LEFT)  vol -= 4;
-            song.channel_volume[ch] = (u8)clamp_vol(vol);
+            u8 nv = (u8)clamp_vol(vol);
+            if (nv != song.channel_volume[ch]) {
+                song.channel_volume[ch] = nv;
+                mt_mark_song_modified();
+            }
         }
     }
 
