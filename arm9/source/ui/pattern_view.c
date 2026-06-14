@@ -288,17 +288,18 @@ static void draw_inside_row(u8 *fb, int screen_row, int pat_row,
     font_puts(fb, 14, screen_row, vol_str, vc);
     font_putc(fb, 16, screen_row, '|', PAL_DIM);
 
-    /* Effect (cols 17-19) */
-    char fx_str[3];
-    if (cell->fx > 0)
-        format_hex2(fx_str, cell->fx);
-    else { fx_str[0] = '-'; fx_str[1] = '-'; fx_str[2] = '\0'; }
-    u8 fc = (cell->fx > 0) ? PAL_EFFECT : PAL_DIM;
+    /* Effect (cols 17-19): 3-letter mnemonic instead of raw hex. An
+     * unsupported (engine no-op) effect renders red so the user can see at
+     * a glance that it will not sound. */
+    const char *fx_str = effect_mnem(cell->fx);
+    u8 fc;
+    if (cell->fx == 0)              fc = PAL_DIM;
+    else if (!effect_supported(cell->fx)) fc = PAL_RED;
+    else                           fc = PAL_EFFECT;
     if (is_cursor_row && cursor.column == 3) fc = PAL_WHITE;
     else if (is_selected) fc = PAL_ORANGE;
     else if (ch_muted) fc = PAL_DIM;
-    font_putc(fb, 17, screen_row, ' ', bg);
-    font_puts(fb, 18, screen_row, fx_str, fc);
+    font_puts(fb, 17, screen_row, fx_str, fc);
     font_putc(fb, 20, screen_row, '|', PAL_DIM);
 
     /* Parameter (cols 21-23) */
@@ -493,6 +494,7 @@ static struct {
     bool playing;
     PlaybackMode play_mode;
     u8  hint_fx;       /* fx code shown in the effect-hint row, 0 = none */
+    u8  column;        /* cursor sub-column, so the empty-Eff prompt redraws */
     bool valid;
 } bot_prev;
 
@@ -521,6 +523,7 @@ void pattern_view_draw_bottom(u8 *fb)
 
     bool dirty = !bot_prev.valid
         || bot_prev.hint_fx != hint_fx
+        || bot_prev.column      != cursor.column
         || bot_prev.instrument  != cursor.instrument
         || bot_prev.channel     != cursor.channel
         || bot_prev.order_pos   != cursor.order_pos
@@ -543,6 +546,7 @@ void pattern_view_draw_bottom(u8 *fb)
     bot_prev.play_row    = cursor.play_row;
     bot_prev.play_order  = cursor.play_order;
     bot_prev.hint_fx     = hint_fx;
+    bot_prev.column      = cursor.column;
     bot_prev.valid       = true;
 
     font_clear(fb, PAL_BG);
@@ -607,9 +611,13 @@ void pattern_view_draw_bottom(u8 *fb)
         if (ei) {
             int cols = FONT_COLS;
 
-            char head[40];
-            snprintf(head, sizeof(head), "%c %s", ei->letter, ei->name);
-            font_puts(fb, 0, hint_row0, head, PAL_EFFECT);
+            char head[48];
+            if (ei->supported)
+                snprintf(head, sizeof(head), "%s  %s", ei->mnem, ei->name);
+            else
+                snprintf(head, sizeof(head), "%s  %s  [NO ENGINE]",
+                         ei->mnem, ei->name);
+            font_puts(fb, 0, hint_row0, head, ei->supported ? PAL_EFFECT : PAL_RED);
 
             const char *desc = ei->description ? ei->description : "";
 
@@ -664,6 +672,11 @@ void pattern_view_draw_bottom(u8 *fb)
         *p++ = hex_chars[cursor.play_row & 0xF];
         *p = '\0';
         font_puts(fb, 0, play_row, pbuf, PAL_PLAY);
+    } else if (cursor.inside && cursor.column == 3) {
+        /* On an empty Eff cell: prompt the LSDJ-style controls. */
+        font_puts(fb, 0, hint_row0, "Effect column", PAL_EFFECT);
+        font_puts(fb, 0, hint_row1, "A:add   A+<>:pick", PAL_DIM);
+        font_puts(fb, 0, play_row,  "B+A:remove", PAL_DIM);
     }
 
     {
@@ -940,7 +953,7 @@ void pattern_view_input(u32 kd, u32 kh)
                             break;
                         case 1: cell->inst  = 0; break;
                         case 2: cell->vol   = 0; break;
-                        case 3: cell->fx    = 0; break;
+                        case 3: cell->fx    = 0; cell->param = 0; break;
                         case 4: cell->param = 0; break;
                         }
                         mt_mark_song_modified();
@@ -1054,12 +1067,35 @@ void pattern_view_input(u32 kd, u32 kh)
                                 playback_preview_note(cell->note, cell->inst);
                         }
                     }
+                } else if (cursor.column == 3) {
+                    /* Effect column (LSDJ-style): A on an empty cell inserts a
+                     * default effect; A + LEFT/RIGHT (or DOWN/UP) cycles
+                     * through the effect list. The bottom screen shows the
+                     * meaning of whatever is currently selected. */
+                    u8 pi = editor_get_current_pattern_idx();
+                    bool changed = false;
+                    if ((down & MT_KEY_CONFIRM) && cell->fx == 0) {
+                        undo_push_cell(pi, cursor.row, cursor.channel);
+                        cell->fx = effect_code_min();
+                        changed = true;
+                    }
+                    if (rep & (KEY_UP|KEY_DOWN|KEY_LEFT|KEY_RIGHT)) {
+                        undo_push_cell(pi, cursor.row, cursor.channel);
+                        int lo = effect_code_min(), hi = effect_code_max();
+                        int fx = cell->fx;
+                        if (fx < lo) fx = lo;
+                        if (fx > hi) fx = hi;
+                        if (rep & (KEY_RIGHT | KEY_UP))   { if (fx < hi) fx++; }
+                        if (rep & (KEY_LEFT  | KEY_DOWN)) { if (fx > lo) fx--; }
+                        cell->fx = (u8)fx;
+                        changed = true;
+                    }
+                    if (changed) mt_mark_song_modified();
                 } else {
                     u8 *field = NULL;
                     switch (cursor.column) {
                     case 1: field = &cell->inst;  break;
                     case 2: field = &cell->vol;   break;
-                    case 3: field = &cell->fx;    break;
                     case 4: field = &cell->param; break;
                     }
                     if (field && (rep & (KEY_UP|KEY_DOWN|KEY_LEFT|KEY_RIGHT))) {

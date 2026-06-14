@@ -1,8 +1,8 @@
 # Effects reference
 
-maxtracker uses IT-style effect codes: one letter (A-Z) plus a two-hex parameter `xy`. The `fx` byte stored in `MT_Cell` is the 1-based numeric code (A=1, B=2, ... Z=26). A `fx` of 0 means "no effect".
+maxtracker uses IT-style effect codes internally: one letter (A-Z) plus a two-hex parameter `xy`. The `fx` byte stored in `MT_Cell` is the 1-based numeric code (A=1, B=2, ... Z=26). A `fx` of 0 means "no effect". The letter is retained for MAS/IT interchange, but the **UI shows a 3-letter mnemonic** (LSDJ/M8 style, e.g. `ARP`, `SPD`) in the Eff column.
 
-The table below is generated from `arm9/source/core/effects.def`; keep both in sync. Effects flagged **TODO** are parsed and displayed but not yet dispatched by the maxmod engine, so they are audibly a no-op.
+The table below is generated from `arm9/source/core/effects.def`; keep both in sync. Effects flagged **NO ENGINE** are parsed and displayed but not yet dispatched by the maxmod engine, so they are audibly a no-op. They render red in the Eff column and the picker labels them `[NO ENGINE]`.
 
 ## How to read the parameter
 
@@ -22,34 +22,34 @@ Tempo (**T**) is split by value range: `00`-`0F` slides tempo down, `10`-`1F` sl
 
 ## Effect table
 
-| Code | Name                     | Param | Status | Description |
-|------|--------------------------|-------|--------|-------------|
-| A    | Set Speed                | `xx`  |        | Set ticks per row (01–1F). Lower = faster. |
-| B    | Position Jump            | `xx`  |        | Jump to order position `xx`, resume at row 0. |
-| C    | Pattern Break            | `xx`  |        | End current row, advance one order, resume at row `xx`. |
-| D    | Volume Slide             | `xy`  |        | See shared slide encoding above. |
-| E    | Pitch Slide Down         | `xx`  |        | Slide pitch down `xx` per tick. `EFy` = fine, `EEy` = extra-fine. |
-| F    | Pitch Slide Up           | `xx`  |        | Slide pitch up `xx` per tick. `FFy` = fine, `FEy` = extra-fine. |
-| G    | Portamento To Note       | `xx`  |        | Glide toward the new note at speed `xx`. Note is not retriggered. |
-| H    | Vibrato                  | `xy`  |        | Pitch LFO. `x` = speed, `y` = depth. |
-| I    | Tremor                   | `xy`  | TODO   | Square-wave volume gate. Not implemented in the engine. |
-| J    | Arpeggio                 | `xy`  |        | Rotate note / note+`x` semitones / note+`y` semitones each tick. |
-| K    | Vibrato + Volume Slide   | `xy`  |        | Continue last Hxy; slide volume per Dxy semantics. |
-| L    | Portamento + Volume Slide| `xy`  |        | Continue last Gxx; slide volume per Dxy semantics. |
-| M    | Set Channel Volume       | `xx`  |        | Set channel volume (00–40). |
-| N    | Channel Volume Slide     | `xy`  |        | Channel-volume slide with Dxy encoding. |
-| O    | Sample Offset            | `xx`  |        | Start the note from byte offset `xx × 100h` into the sample. |
-| P    | Panning Slide            | `xy`  | TODO   | Pan slide with Dxy encoding. Not implemented. |
-| Q    | Retrigger Note           | `xy`  |        | Retrigger every `y` ticks with volume function `x` (0 = copy, 1–5 slide down, 6–F slide up). |
-| R    | Tremolo                  | `xy`  |        | Volume LFO. `x` = speed, `y` = depth. |
-| S    | Extended                 | `xy`  |        | See sub-commands below. |
-| T    | Set Tempo                | `xx`  |        | `Txx >= 20h` sets BPM `xx`. 00–0F slides tempo down, 10–1F slides up. |
-| U    | Fine Vibrato             | `xy`  |        | Vibrato with 1/4 depth resolution. |
-| V    | Global Volume            | `xx`  |        | Set global mix volume (00–80). |
-| W    | Global Volume Slide      | `xy`  |        | Global-volume slide with Dxy encoding. |
-| X    | Set Panning              | `xx`  |        | Hard panning (00 = left, 80 = center, FF = right). |
-| Y    | Panbrello                | `xy`  | TODO   | Panning LFO. Not implemented. |
-| Z    | MIDI / Filter            | `xx`  | TODO   | MIDI macro / resonant filter. Not implemented. |
+| Code | Mnem  | Name                     | Param | Status    | Description |
+|------|-------|--------------------------|-------|-----------|-------------|
+| A    | `SPD` | Set Speed                | `xx`  |           | Set ticks per row (01–1F). Lower = faster. |
+| B    | `JMP` | Position Jump            | `xx`  |           | Jump to order position `xx`, resume at row 0. |
+| C    | `BRK` | Pattern Break            | `xx`  |           | End current row, advance one order, resume at row `xx`. |
+| D    | `VSL` | Volume Slide             | `xy`  |           | See shared slide encoding above. |
+| E    | `PSD` | Pitch Slide Down         | `xx`  |           | Slide pitch down `xx` per tick. `EFy` = fine, `EEy` = extra-fine. |
+| F    | `PSU` | Pitch Slide Up           | `xx`  |           | Slide pitch up `xx` per tick. `FFy` = fine, `FEy` = extra-fine. |
+| G    | `POR` | Portamento To Note       | `xx`  |           | Glide toward the new note at speed `xx`. Note is not retriggered. |
+| H    | `VIB` | Vibrato                  | `xy`  |           | Pitch LFO. `x` = speed, `y` = depth. |
+| I    | `TMR` | Tremor                   | `xy`  | NO ENGINE | Square-wave volume gate. Not implemented in the engine. |
+| J    | `ARP` | Arpeggio                 | `xy`  |           | Rotate note / note+`x` semitones / note+`y` semitones each tick. |
+| K    | `VBV` | Vibrato + Volume Slide   | `xy`  |           | Continue last Hxy; slide volume per Dxy semantics. |
+| L    | `PRV` | Portamento + Volume Slide| `xy`  |           | Continue last Gxx; slide volume per Dxy semantics. |
+| M    | `CHV` | Set Channel Volume       | `xx`  |           | Set channel volume (00–40). |
+| N    | `CVS` | Channel Volume Slide     | `xy`  |           | Channel-volume slide with Dxy encoding. |
+| O    | `OFS` | Sample Offset            | `xx`  |           | Start the note from byte offset `xx × 100h` into the sample. |
+| P    | `PNS` | Panning Slide            | `xy`  | NO ENGINE | Pan slide with Dxy encoding. Not implemented. |
+| Q    | `RTG` | Retrigger Note           | `xy`  |           | Retrigger every `y` ticks with volume function `x` (0 = copy, 1–5 slide down, 6–F slide up). |
+| R    | `TRM` | Tremolo                  | `xy`  |           | Volume LFO. `x` = speed, `y` = depth. |
+| S    | `EXT` | Extended                 | `xy`  | partial   | See sub-commands below (S3/S4/S5/SA are no-ops). |
+| T    | `TMP` | Set Tempo                | `xx`  |           | `Txx >= 20h` sets BPM `xx`. 00–0F slides tempo down, 10–1F slides up. |
+| U    | `FVB` | Fine Vibrato             | `xy`  |           | Vibrato with 1/4 depth resolution. |
+| V    | `GLV` | Global Volume            | `xx`  |           | Set global mix volume (00–80). |
+| W    | `GVS` | Global Volume Slide      | `xy`  |           | Global-volume slide with Dxy encoding. |
+| X    | `PAN` | Set Panning              | `xx`  |           | Hard panning (00 = left, 80 = center, FF = right). |
+| Y    | `PBR` | Panbrello                | `xy`  | NO ENGINE | Panning LFO. Not implemented. |
+| Z    | `FLT` | MIDI / Filter            | `xx`  | NO ENGINE | MIDI macro / resonant filter. Not implemented. |
 
 ## S-extended sub-commands
 
@@ -75,7 +75,15 @@ Tempo (**T**) is split by value range: `00`-`0F` slides tempo down, `10`-`1F` sl
 
 ## In-app
 
-While editing a pattern, moving the cursor over the effect or parameter column shows `FX <letter> <name>` on the bottom screen's hint row. The letter column itself is displayed as hex for now; nibble editing (A+arrows) operates on the raw byte.
+The Eff column shows the 3-letter mnemonic (red when the effect is `[NO ENGINE]`). Moving the cursor onto the Eff or Prm column surfaces `<MNEM>  <name>` plus the wrapped description on the bottom screen.
+
+Editing the Eff column is LSDJ-style:
+
+- **A** on an empty cell inserts the first effect.
+- **A + LEFT/RIGHT** (or DOWN/UP) cycles through the effect list; the bottom-screen hint updates live so you can read each effect's meaning while browsing.
+- **B + A** removes the effect (clears both the Eff and Prm bytes).
+
+The Prm column keeps hex nibble editing: **A + UP/DOWN** edits the high nibble, **A + LEFT/RIGHT** the low nibble.
 
 ## Adding an effect
 
