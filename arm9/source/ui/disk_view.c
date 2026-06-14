@@ -292,6 +292,11 @@ void disk_view_input(u32 kd, u32 kh)
                 status_timer = 240;
             }
         }
+        /* A file was selected and handled (loaded/imported, possibly with a
+         * screen switch). Return so a modifier held during the selecting
+         * A-press can't fall through to the Save (X) / Save-As (Y+X) chords
+         * below and fire a spurious module save right after a load. */
+        return;
     }
     if ((kh & MT_KEY_MOD_SECONDARY) && (kd & MT_KEY_MOD_PRIMARY)) {
         /* Y+X = Save-As: find next available numbered filename */
