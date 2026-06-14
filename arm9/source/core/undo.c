@@ -69,7 +69,10 @@ void undo_push_cell(u8 pattern, u16 row, u8 channel)
 {
     MT_Pattern *pat = song.patterns[pattern];
     if (!pat) return;
-    if (row >= pat->nrows || channel >= MT_MAX_CHANNELS) return;
+    /* Bound the channel by the pattern's actual width: MT_CELL strides by
+     * pat->ncols, so a channel >= ncols would index past the row (and, on
+     * the last rows, past the allocation). */
+    if (row >= pat->nrows || channel >= pat->ncols) return;
 
     MT_Cell *data = (MT_Cell *)malloc(sizeof(MT_Cell));
     if (!data) return;
@@ -99,9 +102,12 @@ void undo_push_block(u8 pattern, u16 row_start, u16 row_end,
     if (!pat) return;
     if (row_end < row_start || ch_end < ch_start) return;
 
-    /* Clamp to pattern bounds */
+    /* Clamp to pattern bounds. Channels must be clamped to pat->ncols (the
+     * MT_CELL stride), not MT_MAX_CHANNELS — otherwise the per-row memcpy
+     * below reads nchan cells past the row, and past the allocation on the
+     * final rows, whenever a pattern is narrower than 32 channels. */
     if (row_end >= pat->nrows) row_end = pat->nrows - 1;
-    if (ch_end >= MT_MAX_CHANNELS) ch_end = MT_MAX_CHANNELS - 1;
+    if (ch_end >= pat->ncols) ch_end = pat->ncols - 1;
 
     u16 nrows = (u16)(row_end - row_start + 1);
     u8  nchan = (u8) (ch_end  - ch_start  + 1);
