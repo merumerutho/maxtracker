@@ -114,7 +114,7 @@ NAV_TEST := navigation_test
 
 # ---- Targets ----
 
-.PHONY: all clean run run-playback-cmp
+.PHONY: all clean run run-all run-playback-cmp run-mas-diff run-reader-cmp
 
 all: $(TARGET) $(PLAYBACK_CMP) $(READER_CMP) $(MAS_DIFF) $(WAV_TEST) $(FB_TEST) $(NAV_TEST)
 
@@ -144,6 +144,41 @@ run: $(TARGET) $(WAV_TEST) $(FB_TEST) $(NAV_TEST)
 	./$(WAV_TEST)
 	./$(FB_TEST)
 	./$(NAV_TEST)
+
+# Everything: the quick unit suite plus the engine-divergence and MAS
+# roundtrip corpus comparisons. The corpus loops degrade to a no-op when
+# data/BestOf is absent, so this is safe to run in any checkout.
+run-all: run run-mas-diff run-reader-cmp run-playback-cmp
+
+# Roundtrip every corpus .mas through mas_load -> mas_write and diff the
+# bytes section-by-section. Exit 0 == identical.
+run-mas-diff: $(MAS_DIFF)
+	@pass=0; fail=0; \
+	for f in ../data/BestOf/*.mas; do \
+	  [ -e "$$f" ] || continue; \
+	  if ./$(MAS_DIFF) "$$f" >/dev/null 2>&1; then \
+	    echo "PASS: $$(basename $$f)"; pass=$$((pass+1)); \
+	  else \
+	    echo "FAIL: $$(basename $$f)"; fail=$$((fail+1)); \
+	  fi; \
+	done; \
+	echo ""; echo "mas_diff: $$pass PASS, $$fail FAIL"; \
+	test $$fail -eq 0
+
+# Compare the original RLE reader vs the patched flat-cell reader, per
+# row/channel flags, across the corpus. Exit 0 == no flag differences.
+run-reader-cmp: $(READER_CMP)
+	@pass=0; fail=0; \
+	for f in ../data/BestOf/*.mas; do \
+	  [ -e "$$f" ] || continue; \
+	  if ./$(READER_CMP) "$$f" >/dev/null 2>&1; then \
+	    echo "PASS: $$(basename $$f)"; pass=$$((pass+1)); \
+	  else \
+	    echo "FAIL: $$(basename $$f)"; fail=$$((fail+1)); \
+	  fi; \
+	done; \
+	echo ""; echo "reader_cmp: $$pass PASS, $$fail FAIL"; \
+	test $$fail -eq 0
 
 # Run playback comparison on all .mas files in data/BestOf
 run-playback-cmp: $(PLAYBACK_CMP)

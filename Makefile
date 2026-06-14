@@ -29,7 +29,7 @@ LFE_DIR     := lib/lfe
 .PHONY: maxmod_ds7 maxmod_ds9 build_arm7 build_arm9 build_arm9_test \
         lfe_ds9 lfe-test \
         emulator emulator-nosynth native native-nosynth \
-        test host-test clean ensure_release ensure_maxmod help
+        test host-test host-test-quick clean ensure_release ensure_maxmod help
 
 # Default: show help
 all: help
@@ -43,7 +43,8 @@ help:
 	@echo "  make native            - build .nds without embedded data (with waveform editor)"
 	@echo "  make native-nosynth    - same as native, but without the waveform editor"
 	@echo "  make test              - build emulator .nds that runs unit tests on boot"
-	@echo "  make host-test         - compile and run maxtracker unit tests natively on host"
+	@echo "  make host-test         - compile and run ALL host tests (unit + corpus + LFE DSP)"
+	@echo "  make host-test-quick   - just the fast unit subset (no corpus / DSP)"
 	@echo "  make lfe-test          - compile and run lfe library tests natively on host"
 	@echo "  make clean             - remove all build artifacts"
 	@echo ""
@@ -133,9 +134,16 @@ test: ensure_release build_arm7
 	@echo "Built (test): release/$(TARGET).nds — runs unit tests on boot"
 
 #---------------------------------------------------------------------------------
-# Host-native test: compile and run tests with system gcc (no emulator needed)
+# Host-native test: compile and run ALL host tests with system gcc (no
+# emulator needed) — the unit suite, the MAS roundtrip + engine-divergence
+# corpus comparisons, AND the LFE DSP library tests. Use `make host-test-quick`
+# for just the fast unit subset.
 #---------------------------------------------------------------------------------
 host-test:
+	@$(MAKE) -C test run-all
+	@$(MAKE) -C $(LFE_DIR) test
+
+host-test-quick:
 	@$(MAKE) -C test run
 
 #---------------------------------------------------------------------------------
